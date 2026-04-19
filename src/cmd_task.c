@@ -319,8 +319,19 @@ int cmd_task_submit(int argc, char **argv) {
 
 int cmd_task_list(int argc, char **argv) {
     int json = 0;
+    const char *status_filter = NULL;
+    const char *since_filter = NULL;
+    const char *until_filter = NULL;
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--json") == 0) json = 1;
+        if (strcmp(argv[i], "--json") == 0) {
+            json = 1;
+        } else if (strcmp(argv[i], "--status") == 0 && i + 1 < argc) {
+            status_filter = argv[++i];
+        } else if (strcmp(argv[i], "--since") == 0 && i + 1 < argc) {
+            since_filter = argv[++i];
+        } else if (strcmp(argv[i], "--until") == 0 && i + 1 < argc) {
+            until_filter = argv[++i];
+        }
     }
 
     sqlite3 *db = db_get_connection();
@@ -331,10 +342,52 @@ int cmd_task_list(int argc, char **argv) {
     }
 
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT id, pid, command, status, exit_code, started_at, finished_at, CAST((strftime('%s', finished_at) - strftime('%s', started_at)) AS INTEGER) AS duration_sec FROM tasks";
+    char sql[1024];
+    char where[512];
+    where[0] = '\0';
+    int need_where = 0;
+    /* time column for filtering */
+    const char *tcol = "COALESCE(started_at, timestamp)";
+    if (status_filter) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 "%sstatus = ?", need_where ? " AND " : "");
+        need_where = 1;
+    }
+    if (since_filter) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 "%s%s >= ?", need_where ? " AND " : "", tcol);
+        need_where = 1;
+    }
+    if (until_filter) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 "%s%s <= ?", need_where ? " AND " : "", tcol);
+        need_where = 1;
+    }
+    if (need_where) {
+        snprintf(sql, sizeof(sql),
+                 "SELECT id, pid, command, status, exit_code, started_at, finished_at, "
+                 "CAST((strftime('%%s', finished_at) - strftime('%%s', started_at)) AS INTEGER) AS duration_sec "
+                 "FROM tasks WHERE %s", where);
+    } else {
+        snprintf(sql, sizeof(sql),
+                 "SELECT id, pid, command, status, exit_code, started_at, finished_at, "
+                 "CAST((strftime('%%s', finished_at) - strftime('%%s', started_at)) AS INTEGER) AS duration_sec "
+                 "FROM tasks");
+    }
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         return 1;
+    }
+    /* Bind filters in the same order we appended them */
+    int bind_idx = 1;
+    if (status_filter) {
+        sqlite3_bind_text(stmt, bind_idx++, status_filter, -1, SQLITE_TRANSIENT);
+    }
+    if (since_filter) {
+        sqlite3_bind_text(stmt, bind_idx++, since_filter, -1, SQLITE_TRANSIENT);
+    }
+    if (until_filter) {
+        sqlite3_bind_text(stmt, bind_idx++, until_filter, -1, SQLITE_TRANSIENT);
     }
 
     if (json) {
@@ -456,6 +509,80 @@ int cmd_task_kill(int argc, char **argv) {
     return 0;
 }
 
+
+int cmd_task_rm(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: mops task rm <task_id> [--log] [--force]\n");
+        return 1;
+    }
+
+    int task_id = atoi(argv[1]);
+    int remove_log = 0;
+    int force = 0;
+
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--log") == 0) remove_log = 1;
+        else if (strcmp(argv[i], "--force") == 0) force = 1;
+    }
+
+    sqlite3 *db = db_get_connection();
+    if (!db) return 1;
+
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db, "SELECT pid, status FROM tasks WHERE id = ?", -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare query.\n");
+        return 1;
+    }
+    sqlite3_bind_int(stmt, 1, task_id);
+
+    int found = 0;
+    int pid = 0;
+    char status_buf[32] = {0};
+
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        found = 1;
+        pid = sqlite3_column_int(stmt, 0);
+        const unsigned char *status = sqlite3_column_text(stmt, 1);
+        if (status) {
+            snprintf(status_buf, sizeof(status_buf), "%s", status);
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    if (!found) {
+        printf("Task ID %d not found.\n", task_id);
+        return 1;
+    }
+
+    if (strcmp(status_buf, "RUNNING") == 0 && !force) {
+        fprintf(stderr, "Refusing to remove RUNNING task without --force.\n");
+        return 1;
+    }
+
+    /* If running and forced, try to kill the process group */
+    if (strcmp(status_buf, "RUNNING") == 0 && pid > 0) {
+        kill(-pid, SIGTERM);
+    }
+
+    /* Optionally remove log file */
+    if (remove_log) {
+        char log_path[256];
+        snprintf(log_path, sizeof(log_path), "/tmp/mops_task_%d.log", task_id);
+        remove(log_path);
+    }
+
+    /* Delete the record */
+    if (sqlite3_prepare_v2(db, "DELETE FROM tasks WHERE id = ?", -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare delete.\n");
+        return 1;
+    }
+    sqlite3_bind_int(stmt, 1, task_id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    printf("Removed task %d%s\n", task_id, remove_log ? " (and log)" : "");
+    return 0;
+}
 
 int cmd_task_logs(int argc, char **argv) {
     if (argc < 2) {
@@ -601,6 +728,7 @@ int cmd_task(int argc, char **argv) {
         printf("  submit (qsub, queue)   Submit a command to the worker queue\n");
         printf("  list (qstat)           List all tracked tasks and their status\n");
         printf("  kill (qdel)            Send SIGTERM to a running task\n");
+        printf("  rm                     Remove a task record (optionally its log)\n");
         printf("  exec                   Execute a command synchronously\n");
         printf("  bg                     Start a background task and track it\n");
         printf("  logs                   Read or tail stdout/stderr for a task\n");
@@ -608,8 +736,12 @@ int cmd_task(int argc, char **argv) {
         printf("Options:\n");
         printf("  --notify <url>         Send a webhook upon task completion ('exec', 'bg')\n");
         printf("  --tail                 Tail log output ('logs')\n");
-        printf("  --force                Aggressively kill orphaned workers ('clean')\n");
+        printf("  --force                Aggressively kill orphaned workers ('clean'), or force 'rm' of RUNNING tasks\n");
         printf("  --json                 Output in JSON format ('list', 'clean')\n");
+        printf("  --status <STATUS>      Filter 'list' by status (e.g., QUEUED,RUNNING,FINISHED,FAILED,KILLED,CANCELLED)\n");
+        printf("  --since <TIME>         Filter 'list' by start time (inclusive). Format: 'YYYY-MM-DD HH:MM:SS'\n");
+        printf("  --until <TIME>         Filter 'list' by end time (inclusive). Format: 'YYYY-MM-DD HH:MM:SS'\n");
+        printf("  --log                  With 'rm', also delete the task log file\n");
         return 0;
     }
 
@@ -627,6 +759,8 @@ int cmd_task(int argc, char **argv) {
         return cmd_task_logs(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "clean") == 0) {
         return cmd_task_clean(argc - 1, argv + 1);
+    } else if (strcmp(subcmd, "rm") == 0) {
+        return cmd_task_rm(argc - 1, argv + 1);
     } else {
         fprintf(stderr, "Unknown task subcommand: %s\n", subcmd);
         fprintf(stderr, "Run 'mops task --help' for more information.\n");
