@@ -25,6 +25,8 @@ int db_init(void) {
                       "status TEXT NOT NULL, "
                       "exit_code INTEGER, "
                       "notify_url TEXT, "
+                      "started_at DATETIME, "
+                      "finished_at DATETIME, "
                       "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
 
     char *err_msg = NULL;
@@ -32,6 +34,8 @@ int db_init(void) {
     if (rc == SQLITE_OK) {
         sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN notify_url TEXT;", 0, 0, NULL);
         sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN exit_code INTEGER;", 0, 0, NULL);
+        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN started_at DATETIME;", 0, 0, NULL);
+        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN finished_at DATETIME;", 0, 0, NULL);
     }
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Failed to create table: %s\n", err_msg);

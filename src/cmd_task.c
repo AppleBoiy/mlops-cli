@@ -147,6 +147,19 @@ int cmd_task_exec(int argc, char **argv) {
 
     int task_id = insert_task(getpid(), cmd, "RUNNING");
 
+    /* record start time */
+    {
+        sqlite3 *db = db_get_connection();
+        if (db) {
+            sqlite3_stmt *stmt;
+            if (sqlite3_prepare_v2(db, "UPDATE tasks SET started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE id = ?", -1, &stmt, NULL) == SQLITE_OK) {
+                sqlite3_bind_int(stmt, 1, task_id);
+                sqlite3_step(stmt);
+                sqlite3_finalize(stmt);
+            }
+        }
+    }
+
     printf("Executing synchronously (Task ID %d): %s\n", task_id, cmd);
     int ret = system(cmd);
     int exit_code = 1;
@@ -162,7 +175,7 @@ int cmd_task_exec(int argc, char **argv) {
         sqlite3 *db = db_get_connection();
         if (db) {
             sqlite3_stmt *stmt;
-            if (sqlite3_prepare_v2(db, "UPDATE tasks SET exit_code = ? WHERE id = ?", -1, &stmt, NULL) == SQLITE_OK) {
+            if (sqlite3_prepare_v2(db, "UPDATE tasks SET exit_code = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?", -1, &stmt, NULL) == SQLITE_OK) {
                 sqlite3_bind_int(stmt, 1, exit_code);
                 sqlite3_bind_int(stmt, 2, task_id);
                 sqlite3_step(stmt);
@@ -211,6 +224,18 @@ int cmd_task_bg(int argc, char **argv) {
         /* Parent process */
         update_task_pid(task_id, pid);
         update_task_status(task_id, "RUNNING");
+        /* record start time */
+        {
+            sqlite3 *db = db_get_connection();
+            if (db) {
+                sqlite3_stmt *stmt;
+                if (sqlite3_prepare_v2(db, "UPDATE tasks SET started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE id = ?", -1, &stmt, NULL) == SQLITE_OK) {
+                    sqlite3_bind_int(stmt, 1, task_id);
+                    sqlite3_step(stmt);
+                    sqlite3_finalize(stmt);
+                }
+            }
+        }
         printf("Started background task (Task ID %d, PID %d): %s\n", task_id, pid, cmd);
         return 0;
     } else {
@@ -256,7 +281,7 @@ int cmd_task_bg(int argc, char **argv) {
             sqlite3 *db = db_get_connection();
             if (db) {
                 sqlite3_stmt *stmt;
-                if (sqlite3_prepare_v2(db, "UPDATE tasks SET exit_code = ? WHERE id = ?", -1, &stmt, NULL) == SQLITE_OK) {
+                if (sqlite3_prepare_v2(db, "UPDATE tasks SET exit_code = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?", -1, &stmt, NULL) == SQLITE_OK) {
                     sqlite3_bind_int(stmt, 1, exit_code);
                     sqlite3_bind_int(stmt, 2, task_id);
                     sqlite3_step(stmt);
@@ -306,7 +331,7 @@ int cmd_task_list(int argc, char **argv) {
     }
 
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT id, pid, command, status FROM tasks";
+    const char *sql = "SELECT id, pid, command, status, exit_code, started_at, finished_at, CAST((strftime('%s', finished_at) - strftime('%s', started_at)) AS INTEGER) AS duration_sec FROM tasks";
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         return 1;
@@ -315,8 +340,8 @@ int cmd_task_list(int argc, char **argv) {
     if (json) {
         printf("[");
     } else {
-        printf("%-5s | %-10s | %-12s | %s\n", "ID", "PID", "STATUS", "COMMAND");
-        printf("--------------------------------------------------------------\n");
+        printf("%-5s | %-10s | %-12s | %-9s | %-19s | %-19s | %-10s | %s\n", "ID", "PID", "STATUS", "EXIT_CODE", "STARTED_AT", "FINISHED_AT", "DURATION", "COMMAND");
+        printf("----------------------------------------------------------------------------------------------------------------------\n");
     }
 
     int first = 1;
@@ -325,6 +350,12 @@ int cmd_task_list(int argc, char **argv) {
         int pid = sqlite3_column_int(stmt, 1);
         const unsigned char *cmd = sqlite3_column_text(stmt, 2);
         const unsigned char *status = sqlite3_column_text(stmt, 3);
+        int exit_code_is_null = (sqlite3_column_type(stmt, 4) == SQLITE_NULL);
+        int exit_code = exit_code_is_null ? 0 : sqlite3_column_int(stmt, 4);
+        const unsigned char *started_at = sqlite3_column_text(stmt, 5);
+        const unsigned char *finished_at = sqlite3_column_text(stmt, 6);
+        int duration_is_null = (sqlite3_column_type(stmt, 7) == SQLITE_NULL);
+        int duration_sec = duration_is_null ? 0 : sqlite3_column_int(stmt, 7);
 
         char current_status[32];
         snprintf(current_status, sizeof(current_status), "%s", status);
@@ -344,12 +375,26 @@ int cmd_task_list(int argc, char **argv) {
 
         if (json) {
             if (!first) printf(",");
-            printf("{\"id\":%d,\"pid\":%d,\"status\":\"%s\",\"command\":", id, pid, current_status);
+            printf("{\"id\":%d,\"pid\":%d,\"status\":\"%s\",\"exit_code\":", id, pid, current_status);
+            if (exit_code_is_null) printf("null"); else printf("%d", exit_code);
+            printf(",\"started_at\":");
+            if (started_at) { print_json_string((const char*)started_at); } else { printf("null"); }
+            printf(",\"finished_at\":");
+            if (finished_at) { print_json_string((const char*)finished_at); } else { printf("null"); }
+            printf(",\"duration_sec\":");
+            if (duration_is_null) printf("null"); else printf("%d", duration_sec);
+            printf(",\"command\":");
             print_json_string((const char*)cmd);
             printf("}");
             first = 0;
         } else {
-            printf("%-5d | %-10d | %-12s | %s\n", id, pid, current_status, cmd);
+            printf("%-5d | %-10d | %-12s | %-9d | %-19s | %-19s | %-10d | %s\n",
+                   id, pid, current_status,
+                   exit_code_is_null ? -1 : exit_code,
+                   started_at ? (const char*)started_at : "-",
+                   finished_at ? (const char*)finished_at : "-",
+                   duration_is_null ? -1 : duration_sec,
+                   cmd);
         }
     }
 
