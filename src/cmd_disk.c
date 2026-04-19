@@ -191,6 +191,7 @@ int cmd_disk(int argc, char **argv) {
     } else {
         fprintf(stderr, "Unknown disk command: %s\n", subcmd);
         fprintf(stderr, "Usage: mops disk <status|usage|mounts> [-h] [-l]\n");
+        fprintf(stderr, "Run 'mops disk --help' for more information.\n");
         return 1;
     }
 }
