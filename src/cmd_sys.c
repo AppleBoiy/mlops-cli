@@ -255,9 +255,9 @@ int cmd_sys_gpu(int argc, char **argv) {
         int first = 1;
         while (fgets(line, sizeof(line), fp)) {
             line[strcspn(line, "\n")] = 0;
-            char *pid_str = strtok(line, ",");
-            char *mem = strtok(NULL, ",");
-            char *name = strtok(NULL, ",");
+            const char *pid_str = strtok(line, ",");
+            const char *mem = strtok(NULL, ",");
+            const char *name = strtok(NULL, ",");
             
             if (pid_str && mem && name) {
                 if (json) {
@@ -389,7 +389,7 @@ int cmd_sys_tpu(int argc, char **argv) {
         return 1;
     }
     
-    struct dirent *ent;
+    const struct dirent *ent;
     int tpu_count = 0;
     
     if (json) {

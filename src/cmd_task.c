@@ -774,7 +774,7 @@ int cmd_task_clean(int argc, char **argv) {
         return 1;
     }
 
-    struct dirent *ent;
+    const struct dirent *ent;
     int found = 0;
     int first = 1;
 
