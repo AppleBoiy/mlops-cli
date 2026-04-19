@@ -6,49 +6,10 @@
 #include <dirent.h>
 #include <ctype.h>
 
-/*
- * Find the inode associated with a given local port.
- * Parses /proc/net/tcp or /proc/net/tcp6.
- */
-static unsigned long find_inode_for_port(int search_port, const char *proto_file) {
-    FILE *fp = fopen(proto_file, "r");
-    if (!fp) return 0;
-
-    char line[512];
-    /* Skip header line */
-    if (!fgets(line, sizeof(line), fp)) {
-        fclose(fp);
-        return 0;
-    }
-
-    while (fgets(line, sizeof(line), fp)) {
-        unsigned int local_ip, local_port;
-        unsigned long inode = 0;
-        
-        /*
-         * /proc/net/tcp format:
-         * sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode
-         */
-        if (sscanf(line, "%*s %x:%x %*s %*s %*s %*s %*s %*s %*s %lu", 
-                   &local_ip, &local_port, &inode) >= 3) {
-            if ((int)local_port == search_port) {
-                fclose(fp);
-                return inode;
-            }
-        }
-    }
-    
-    fclose(fp);
-    return 0;
-}
-
-/*
- * Scan /proc/[pid]/fd/ to find the process holding the socket inode.
- */
-static void find_process_by_inode(unsigned long target_inode) {
+static void find_process_by_inode(unsigned long target_inode, int json) {
     DIR *proc_dir = opendir("/proc");
     if (!proc_dir) {
-        fprintf(stderr, "Error: Cannot open /proc. Are you on Linux?\n");
+        if (!json) fprintf(stderr, "Error: Cannot open /proc. Are you on Linux?\n");
         return;
     }
 
@@ -92,8 +53,12 @@ static void find_process_by_inode(unsigned long target_inode) {
                             }
                             fclose(cmd_fp);
                         }
-                        
-                        printf("PID: %s | Command: %s\n", proc_ent->d_name, cmdline);
+
+                        if (json) {
+                            printf("{\"pid\":%s,\"command\":\"%s\"}\n", proc_ent->d_name, cmdline);
+                        } else {
+                            printf("PID: %s | Command: %s\n", proc_ent->d_name, cmdline);
+                        }
                         
                         closedir(fd_dir);
                         closedir(proc_dir);
@@ -105,33 +70,89 @@ static void find_process_by_inode(unsigned long target_inode) {
         closedir(fd_dir);
     }
     closedir(proc_dir);
-    
-    printf("Could not map inode %lu to an active PID (You might need root privileges).\n", target_inode);
+
+    if (json) {
+        printf("{\"error\":\"Could not map inode to an active PID\"}\n");
+    } else {
+        printf("Could not map inode %lu to an active PID (You might need root privileges).\n", target_inode);
+    }
 }
+
+/*
+ * Find the inode associated with a given local port.
+ * Parses /proc/net/tcp or /proc/net/tcp6.
+ */
+static unsigned long find_inode_for_port(int search_port, const char *proto_file) {
+    FILE *fp = fopen(proto_file, "r");
+    if (!fp) return 0;
+
+    char line[512];
+    /* Skip header line */
+    if (!fgets(line, sizeof(line), fp)) {
+        fclose(fp);
+        return 0;
+    }
+
+    while (fgets(line, sizeof(line), fp)) {
+        unsigned int local_ip, local_port;
+        unsigned long inode = 0;
+        
+        /*
+         * /proc/net/tcp format:
+         * sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode
+         */
+        if (sscanf(line, "%*s %x:%x %*s %*s %*s %*s %*s %*s %*s %lu", 
+                   &local_ip, &local_port, &inode) >= 3) {
+            if ((int)local_port == search_port) {
+                fclose(fp);
+                return inode;
+            }
+        }
+    }
+    
+    fclose(fp);
+    return 0;
+}
+
+/*
+ * Scan /proc/[pid]/fd/ to find the process holding the socket inode.
+ */
+
 
 /*
  * Handle `mops net port <number>`
  */
 int cmd_net_port(int argc, char **argv) {
-    if (argc > 0 && (strcmp(argv[0], "--help") == 0 || strcmp(argv[0], "-h") == 0)) {
-        printf("Usage: mops net port <number>\n\n");
-        printf("Finds the exact process ID (PID) and command line associated with a local TCP port.\n");
-        return 0;
+    const char *port_str = NULL;
+    int json = 0;
+
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) {
+            json = 1;
+        } else if (port_str == NULL) {
+            port_str = argv[i];
+        }
     }
 
-    if (argc < 1) {
-        fprintf(stderr, "Usage: mops net port <number>\n");
+    if (port_str == NULL) {
+        fprintf(stderr, "Usage: mops net port <number> [--json]\n");
         fprintf(stderr, "Run 'mops net --help' for more information.\n");
         return 1;
     }
 
-    int port = atoi(argv[0]);
+    if (strcmp(port_str, "--help") == 0 || strcmp(port_str, "-h") == 0) {
+        printf("Usage: mops net port <number> [--json]\n\n");
+        printf("Finds the exact process ID (PID) and command line associated with a local TCP port.\n");
+        return 0;
+    }
+
+    int port = atoi(port_str);
     if (port <= 0 || port > 65535) {
-        fprintf(stderr, "Invalid port number: %s\n", argv[0]);
+        fprintf(stderr, "Invalid port number: %s\n", port_str);
         return 1;
     }
 
-    printf("Investigating port %d...\n", port);
+    if (!json) printf("Investigating port %d...\n", port);
 
     /* Check TCP IPv4 */
     unsigned long inode = find_inode_for_port(port, "/proc/net/tcp");
@@ -142,12 +163,16 @@ int cmd_net_port(int argc, char **argv) {
     }
 
     if (!inode) {
-        printf("No active TCP socket found listening on port %d.\n", port);
+        if (json) {
+            printf("{\"error\":\"No active TCP socket found on port %d\"}\n", port);
+        } else {
+            printf("No active TCP socket found listening on port %d.\n", port);
+        }
         return 0;
     }
 
-    printf("Found socket inode: %lu. Scanning process tree...\n", inode);
-    find_process_by_inode(inode);
+    if (!json) printf("Found socket inode: %lu. Scanning process tree...\n", inode);
+    find_process_by_inode(inode, json);
 
     return 0;
 }
@@ -167,7 +192,9 @@ int cmd_net(int argc, char **argv) {
     if (strcmp(subcmd, "--help") == 0 || strcmp(subcmd, "-h") == 0) {
         printf("Usage: mops net <subcommand> [options]\n\n");
         printf("Commands:\n");
-        printf("  port      Investigate which process is listening on a specific local port\n");
+        printf("  port      Investigate which process is listening on a specific local port\n\n");
+        printf("Options:\n");
+        printf("  --json    Output in JSON format\n");
         return 0;
     } else if (strcmp(subcmd, "port") == 0) {
         return cmd_net_port(argc - 2, argv + 2);

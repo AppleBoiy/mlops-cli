@@ -5,7 +5,7 @@
 #include <sys/statvfs.h>
 #include <errno.h>
 
-static int do_disk_status(int human, int long_fmt) {
+static int do_disk_status(int human, int long_fmt, int json) {
     FILE *fp = fopen("/proc/diskstats", "r");
     if (!fp) {
         perror("Error opening /proc/diskstats");
@@ -13,7 +13,11 @@ static int do_disk_status(int human, int long_fmt) {
     }
 
     char line[1024];
-    if (long_fmt) {
+    int first = 1;
+
+    if (json) {
+        printf("[");
+    } else if (long_fmt) {
         if (human) {
             printf("%-15s %-15s %-15s %-15s %-15s\n", "DEVICE", "READS", "WRITES", "READ (MB)", "WRITTEN (MB)");
         } else {
@@ -23,13 +27,12 @@ static int do_disk_status(int human, int long_fmt) {
     } else {
         if (human) {
             printf("%-15s %-15s %-15s\n", "DEVICE", "READ (MB)", "WRITTEN (MB)");
-            printf("-----------------------------------------------\n");
         } else {
             printf("%-15s %-15s %-15s\n", "DEVICE", "READS", "WRITES");
-            printf("-----------------------------------------------\n");
         }
+        printf("-----------------------------------------------\n");
     }
-    
+
     while (fgets(line, sizeof(line), fp)) {
         int major, minor;
         char dev[256];
@@ -53,7 +56,15 @@ static int do_disk_status(int human, int long_fmt) {
                 continue;
             }
             
-            if (long_fmt) {
+            if (json) {
+                if (!first) printf(",");
+                printf("{\"device\":\"%s\",\"reads\":%lu,\"writes\":%lu", dev, reads, writes);
+                if (long_fmt) {
+                    printf(",\"sectors_read\":%lu,\"sectors_written\":%lu", sectors_read, sectors_write);
+                }
+                printf("}");
+                first = 0;
+            } else if (long_fmt) {
                 if (human) {
                     printf("%-15s %-15lu %-15lu %-15.2f %-15.2f\n", dev, reads, writes,
                            (double)sectors_read * 512.0 / 1048576.0,
@@ -63,7 +74,7 @@ static int do_disk_status(int human, int long_fmt) {
                 }
             } else {
                 if (human) {
-                    printf("%-15s %-15.2f %-15.2f\n", dev, 
+                    printf("%-15s %-15.2f %-15.2f\n", dev,
                            (double)sectors_read * 512.0 / 1048576.0,
                            (double)sectors_write * 512.0 / 1048576.0);
                 } else {
@@ -72,51 +83,66 @@ static int do_disk_status(int human, int long_fmt) {
             }
         }
     }
-    
+
+    if (json) {
+        printf("]\n");
+    }
     fclose(fp);
     return 0;
 }
 
-static int do_disk_usage(int human, int long_fmt) {
+static int do_disk_usage(int human, int long_fmt, int json) {
     struct statvfs stat;
     if (statvfs("/", &stat) != 0) {
         perror("Error executing statvfs on '/'");
         return 1;
     }
 
-    printf("Disk Usage (Root Filesystem '/'):\n");
+    unsigned long long total_b = (unsigned long long)stat.f_blocks * stat.f_frsize;
+    unsigned long long free_b = (unsigned long long)stat.f_bfree * stat.f_frsize;
+    unsigned long long used_b = total_b - free_b;
 
-    if (long_fmt) {
-        printf("  Block size:    %lu bytes\n", (unsigned long)stat.f_bsize);
-        printf("  Fragment size: %lu bytes\n", (unsigned long)stat.f_frsize);
-        printf("  Blocks total:  %lu\n", (unsigned long)stat.f_blocks);
-        printf("  Blocks free:   %lu\n", (unsigned long)stat.f_bfree);
-        printf("  Inodes total:  %lu\n", (unsigned long)stat.f_files);
-        printf("  Inodes free:   %lu\n", (unsigned long)stat.f_ffree);
-    }
-
-    if (human) {
-        double total = (double)stat.f_blocks * stat.f_frsize / (1024.0 * 1024.0 * 1024.0);
-        double free = (double)stat.f_bfree * stat.f_frsize / (1024.0 * 1024.0 * 1024.0);
-        double used = total - free;
-
-        printf("  Total: %.2f GB\n", total);
-        printf("  Used:  %.2f GB\n", used);
-        printf("  Free:  %.2f GB\n", free);
+    if (json) {
+        printf("{\"total_bytes\":%llu,\"used_bytes\":%llu,\"free_bytes\":%llu", total_b, used_b, free_b);
+        if (long_fmt) {
+            printf(",\"block_size\":%lu", (unsigned long)stat.f_bsize);
+            printf(",\"fragment_size\":%lu", (unsigned long)stat.f_frsize);
+            printf(",\"blocks_total\":%lu", (unsigned long)stat.f_blocks);
+            printf(",\"blocks_free\":%lu", (unsigned long)stat.f_bfree);
+            printf(",\"inodes_total\":%lu", (unsigned long)stat.f_files);
+            printf(",\"inodes_free\":%lu", (unsigned long)stat.f_ffree);
+        }
+        printf("}\n");
     } else {
-        unsigned long long total = (unsigned long long)stat.f_blocks * stat.f_frsize;
-        unsigned long long free = (unsigned long long)stat.f_bfree * stat.f_frsize;
-        unsigned long long used = total - free;
+        printf("Disk Usage (Root Filesystem '/'):\n");
 
-        printf("  Total: %llu bytes\n", total);
-        printf("  Used:  %llu bytes\n", used);
-        printf("  Free:  %llu bytes\n", free);
+        if (long_fmt) {
+            printf("  Block size:    %lu bytes\n", (unsigned long)stat.f_bsize);
+            printf("  Fragment size: %lu bytes\n", (unsigned long)stat.f_frsize);
+            printf("  Blocks total:  %lu\n", (unsigned long)stat.f_blocks);
+            printf("  Blocks free:   %lu\n", (unsigned long)stat.f_bfree);
+            printf("  Inodes total:  %lu\n", (unsigned long)stat.f_files);
+            printf("  Inodes free:   %lu\n", (unsigned long)stat.f_ffree);
+        }
+
+        if (human) {
+            double total_gb = (double)total_b / (1024.0 * 1024.0 * 1024.0);
+            double used_gb = (double)used_b / (1024.0 * 1024.0 * 1024.0);
+            double free_gb = (double)free_b / (1024.0 * 1024.0 * 1024.0);
+            printf("  Total: %.2f GB\n", total_gb);
+            printf("  Used:  %.2f GB\n", used_gb);
+            printf("  Free:  %.2f GB\n", free_gb);
+        } else {
+            printf("  Total: %llu bytes\n", total_b);
+            printf("  Used:  %llu bytes\n", used_b);
+            printf("  Free:  %llu bytes\n", free_b);
+        }
     }
-    
+
     return 0;
 }
 
-static int do_disk_mounts(int human, int long_fmt) {
+static int do_disk_mounts(int human, int long_fmt, int json) {
     (void)human;
     FILE *fp = fopen("/proc/mounts", "r");
     if (!fp) {
@@ -125,7 +151,11 @@ static int do_disk_mounts(int human, int long_fmt) {
     }
 
     char line[1024];
-    if (long_fmt) {
+    int first = 1;
+
+    if (json) {
+        printf("[");
+    } else if (long_fmt) {
         printf("%-20s %-30s %-10s %s\n", "DEVICE", "MOUNTPOINT", "FSTYPE", "OPTIONS");
         printf("--------------------------------------------------------------------------------\n");
     } else {
@@ -136,7 +166,15 @@ static int do_disk_mounts(int human, int long_fmt) {
     while (fgets(line, sizeof(line), fp)) {
         char dev[256], mnt[256], type[256], opts[256];
         if (sscanf(line, "%255s %255s %255s %255s", dev, mnt, type, opts) == 4) {
-            if (long_fmt) {
+            if (json) {
+                if (!first) printf(",");
+                printf("{\"device\":\"%s\",\"mountpoint\":\"%s\",\"fstype\":\"%s\"", dev, mnt, type);
+                if (long_fmt) {
+                    printf(",\"options\":\"%s\"", opts);
+                }
+                printf("}");
+                first = 0;
+            } else if (long_fmt) {
                 printf("%-20s %-30s %-10s %s\n", dev, mnt, type, opts);
             } else {
                 printf("%-20s %-30s %-10s\n", dev, mnt, type);
@@ -144,6 +182,9 @@ static int do_disk_mounts(int human, int long_fmt) {
         }
     }
     
+    if (json) {
+        printf("]\n");
+    }
     fclose(fp);
     return 0;
 }
@@ -156,7 +197,7 @@ int cmd_disk(int argc, char **argv) {
 
     const char *first_arg = argv[1];
 
-    if (strcmp(first_arg, "--help") == 0 || strcmp(first_arg, "-h") == 0) {
+    if (strcmp(first_arg, "--help") == 0) {
         printf("Usage: mops disk <command> [options]\n\n");
         printf("Commands:\n");
         printf("  status    Show disk read/write statistics\n");
@@ -165,18 +206,22 @@ int cmd_disk(int argc, char **argv) {
         printf("Options:\n");
         printf("  -h        Human-readable output\n");
         printf("  -l        Long format (include extra information columns)\n");
+        printf("  --json    Output in JSON format\n");
         return 0;
     }
 
     const char *subcmd = NULL;
     int human = 0;
     int long_fmt = 0;
+    int json = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0) {
             human = 1;
         } else if (strcmp(argv[i], "-l") == 0) {
             long_fmt = 1;
+        } else if (strcmp(argv[i], "--json") == 0) {
+            json = 1;
         } else if (argv[i][0] != '-' && subcmd == NULL) {
             subcmd = argv[i];
         } else {
@@ -192,11 +237,11 @@ int cmd_disk(int argc, char **argv) {
     }
 
     if (strcmp(subcmd, "status") == 0) {
-        return do_disk_status(human, long_fmt);
+        return do_disk_status(human, long_fmt, json);
     } else if (strcmp(subcmd, "usage") == 0) {
-        return do_disk_usage(human, long_fmt);
+        return do_disk_usage(human, long_fmt, json);
     } else if (strcmp(subcmd, "mounts") == 0) {
-        return do_disk_mounts(human, long_fmt);
+        return do_disk_mounts(human, long_fmt, json);
     } else {
         fprintf(stderr, "Unknown disk command: %s\n", subcmd);
         fprintf(stderr, "Usage: mops disk <command> [options]\n");

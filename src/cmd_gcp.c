@@ -78,16 +78,22 @@ static int fetch_gcp_metadata(const char *path, char *out_body, size_t max_len) 
  * Identity & Metadata Debugger
  */
 static int cmd_gcp_whoami(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
+    int json = 0;
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) json = 1;
+    }
     
     char email[256] = {0};
     char project[256] = {0};
     char zone_full[256] = {0};
     
     if (fetch_gcp_metadata("instance/service-accounts/default/email", email, sizeof(email)) != 0) {
-        fprintf(stderr, "Error: Could not reach GCP Metadata Server (169.254.169.254).\n");
-        fprintf(stderr, "Are you running this directly on a GCP VM?\n");
+        if (json) {
+            printf("{\"error\":\"Could not reach GCP Metadata Server\"}\n");
+        } else {
+            fprintf(stderr, "Error: Could not reach GCP Metadata Server (169.254.169.254).\n");
+            fprintf(stderr, "Are you running this directly on a GCP VM?\n");
+        }
         return 1;
     }
     
@@ -98,15 +104,24 @@ static int cmd_gcp_whoami(int argc, char **argv) {
     char *zone = strrchr(zone_full, '/');
     if (zone) zone++; else zone = zone_full;
     
-    printf("GCP Environment Context:\n");
-    printf("----------------------------------------------------\n");
-    printf("Project ID:      %s\n", project);
-    printf("Zone:            %s\n", zone);
-    printf("Service Account: %s\n", email);
-    
     char tags[1024] = {0};
-    if (fetch_gcp_metadata("instance/tags", tags, sizeof(tags)) == 0) {
-        printf("Tags:            %s\n", tags);
+    int has_tags = (fetch_gcp_metadata("instance/tags", tags, sizeof(tags)) == 0);
+
+    if (json) {
+        printf("{\"project_id\":\"%s\",\"zone\":\"%s\",\"service_account\":\"%s\"", project, zone, email);
+        if (has_tags) {
+            printf(",\"tags\":%s", tags);
+        }
+        printf("}\n");
+    } else {
+        printf("GCP Environment Context:\n");
+        printf("----------------------------------------------------\n");
+        printf("Project ID:      %s\n", project);
+        printf("Zone:            %s\n", zone);
+        printf("Service Account: %s\n", email);
+        if (has_tags) {
+            printf("Tags:            %s\n", tags);
+        }
     }
     
     return 0;
@@ -265,7 +280,9 @@ int cmd_gcp(int argc, char **argv) {
         printf("  whoami               Instantly print active Service Account, Project, and Zone (zero-auth)\n");
         printf("  spot-watch           Poll for spot termination and trigger script (--exec \"<cmd>\")\n");
         printf("  tunnel               Establish an IAP tunnel (<instance> <remote-port>:<local-port>)\n");
-        printf("  run-with-secrets     Fetch a Secret Manager payload and inject it (--secret=\"ENV=NAME\" \"<cmd>\")\n");
+        printf("  run-with-secrets     Fetch a Secret Manager payload and inject it (--secret=\"ENV=NAME\" \"<cmd>\")\n\n");
+        printf("Options:\n");
+        printf("  --json               Output in JSON format (for 'whoami' command)\n");
         return 0;
     } else if (strcmp(subcmd, "whoami") == 0) {
         return cmd_gcp_whoami(argc - 2, argv + 2);

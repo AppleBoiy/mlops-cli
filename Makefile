@@ -6,13 +6,7 @@ TARGET = mops
 SRC_DIR = src
 OBJ_DIR = obj
 
-SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/db.c \
-       $(SRC_DIR)/cmd_disk.c \
-       $(SRC_DIR)/cmd_sys.c \
-       $(SRC_DIR)/cmd_net.c \
-       $(SRC_DIR)/cmd_gcp.c \
-       $(SRC_DIR)/cmd_task.c
+SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
 PREFIX ?= /usr/local

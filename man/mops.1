@@ -27,6 +27,8 @@ Display currently mounted drives parsed from /proc/mounts.
   \fB\-h\fR        Human-readable output (MB instead of raw sectors)
 .br
   \fB\-l\fR        Long format (include extra information columns)
+.br
+  \fB\-\-json\fR    Output in JSON format
 
 .SS sys \- System & Hardware Metrics
 Monitors CPU, GPU, TPU, and container limits.
@@ -53,11 +55,17 @@ Show Cgroup / Docker container resource limits and actual memory usage.
   \fB\-l\fR        Long format (include extra information columns)
 .br
   \fB\-\-pids\fR    Map active processes to GPU allocations (for the 'gpu' command)
+.br
+  \fB\-\-json\fR    Output in JSON format
 
 .SS net \- Network Operations
 .TP
 .B port \fI<number>\fR
 Finds the exact process ID (PID) and command line associated with a local TCP port by cross-referencing /proc/net/tcp and /proc/[pid]/fd socket inodes.
+.PP
+\fBOptions for net:\fR
+.br
+  \fB\-\-json\fR    Output in JSON format
 
 .SS task \- Task Management
 Tracks and manages asynchronous or queued tasks using a local SQLite database. (Note: Only available when compiled with DEV_MODE).
@@ -82,6 +90,10 @@ Sweep zombie processes and orphaned workers from the process tree. Use \-\-force
 .TP
 .B kill \fI<id>\fR
 Send SIGTERM to a running task.
+.PP
+\fBOptions for task:\fR
+.br
+  \fB\-\-json\fR    Output in JSON format (for 'list' and 'clean' commands)
 
 .SS gcp \- Google Cloud Platform Utilities
 Provides fast, dependency-free interactions with the GCP Metadata Server and wrappers for complex gcloud commands.
@@ -97,6 +109,10 @@ Establish an IAP tunnel to a private GCP instance, automatically constructing th
 .TP
 .B run-with-secrets \fI"<cmd>"\fR
 Dynamically fetch secrets from GCP Secret Manager and inject them as environment variables into the provided command without writing them to disk.
+.PP
+\fBOptions for gcp:\fR
+.br
+  \fB\-\-json\fR    Output in JSON format (for 'whoami' command)
 
 .SH FILES
 .TP

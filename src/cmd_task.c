@@ -14,6 +14,30 @@
 
 #ifdef DEV_MODE
 
+/*
+ * A minimal JSON string escaper.
+ * It handles quotes, backslashes, and basic control characters.
+ */
+static void print_json_string(const char *str) {
+    if (!str) {
+        printf("\"\"");
+        return;
+    }
+    printf("\"");
+    for (int i = 0; str[i] != '\0'; i++) {
+        unsigned char c = str[i];
+        if (c == '"' || c == '\\') {
+            putchar('\\');
+            putchar(c);
+        } else if (c < 32 || c == 127) {
+            printf("\\u%04x", c);
+        } else {
+            putchar(c);
+        }
+    }
+    printf("\"");
+}
+
 /* Declare external DB function from db.c */
 extern sqlite3* db_get_connection(void);
 
@@ -268,12 +292,15 @@ int cmd_task_queue(int argc, char **argv) {
 }
 
 int cmd_task_list(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-    
+    int json = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--json") == 0) json = 1;
+    }
+
     sqlite3 *db = db_get_connection();
     if (!db) {
-        fprintf(stderr, "Database connection not available.\n");
+        if (json) printf("{\"error\":\"Database connection not available\"}\n");
+        else fprintf(stderr, "Database connection not available.\n");
         return 1;
     }
 
@@ -285,9 +312,14 @@ int cmd_task_list(int argc, char **argv) {
         return 1;
     }
     
-    printf("%-5s | %-10s | %-12s | %s\n", "ID", "PID", "STATUS", "COMMAND");
-    printf("--------------------------------------------------------------\n");
-    
+    if (json) {
+        printf("[");
+    } else {
+        printf("%-5s | %-10s | %-12s | %s\n", "ID", "PID", "STATUS", "COMMAND");
+        printf("--------------------------------------------------------------\n");
+    }
+
+    int first = 1;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         int id = sqlite3_column_int(stmt, 0);
         int pid = sqlite3_column_int(stmt, 1);
@@ -311,9 +343,20 @@ int cmd_task_list(int argc, char **argv) {
             }
         }
         
-        printf("%-5d | %-10d | %-12s | %s\n", id, pid, current_status, cmd);
+        if (json) {
+            if (!first) printf(",");
+            printf("{\"id\":%d,\"pid\":%d,\"status\":\"%s\",\"command\":", id, pid, current_status);
+            print_json_string((const char*)cmd);
+            printf("}");
+            first = 0;
+        } else {
+            printf("%-5d | %-10d | %-12s | %s\n", id, pid, current_status, cmd);
+        }
     }
     
+    if (json) {
+        printf("]\n");
+    }
     sqlite3_finalize(stmt);
     return 0;
 }
@@ -398,21 +441,29 @@ int cmd_task_logs(int argc, char **argv) {
 
 int cmd_task_clean(int argc, char **argv) {
     int force = 0;
+    int json = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--force") == 0) force = 1;
+        if (strcmp(argv[i], "--json") == 0) json = 1;
     }
-    
+
     DIR *dir = opendir("/proc");
     if (!dir) {
-        perror("opendir /proc");
+        if (json) printf("{\"error\":\"Could not open /proc\"}\n");
+        else perror("opendir /proc");
         return 1;
     }
-    
+
     struct dirent *ent;
     int found = 0;
-    
-    printf("Scanning for zombie processes and orphaned workers...\n");
-    
+    int first = 1;
+
+    if (json) {
+        printf("[");
+    } else {
+        printf("Scanning for zombie processes and orphaned workers...\n");
+    }
+
     while ((ent = readdir(dir)) != NULL) {
         if (!isdigit((unsigned char)ent->d_name[0])) continue;
         
@@ -431,26 +482,52 @@ int cmd_task_clean(int argc, char **argv) {
          * Format: pid (comm) state ppid ...
          */
         if (fscanf(fp, "%d (%255[^)]) %c %d", &pid, comm, &state, &ppid) == 4) {
-            if (state == 'Z') {
-                printf("- Zombie process found: PID %d (%s) PPID %d\n", pid, comm, ppid);
-                found++;
-            } else if (ppid == 1 && (strstr(comm, "python") != NULL || strstr(comm, "worker") != NULL)) {
-                printf("- Orphaned worker found: PID %d (%s)\n", pid, comm);
-                found++;
-                if (force) {
-                    printf("  -> Sending SIGKILL to PID %d\n", pid);
+            int is_zombie = (state == 'Z');
+            int is_orphan = (ppid == 1 && (strstr(comm, "python") != NULL || strstr(comm, "worker") != NULL));
+
+            if (is_zombie || is_orphan) {
+                if (json) {
+                    if (!first) printf(",");
+                    printf("{");
+                    if (is_zombie) {
+                        printf("\"type\":\"zombie\",\"pid\":%d,\"comm\":", pid);
+                        print_json_string(comm);
+                        printf(",\"ppid\":%d", ppid);
+                    } else { // is_orphan
+                        printf("\"type\":\"orphan\",\"pid\":%d,\"comm\":", pid);
+                        print_json_string(comm);
+                        printf(",\"killed\":%s", force ? "true" : "false");
+                    }
+                    printf("}");
+                    first = 0;
+                } else {
+                    if (is_zombie) {
+                        printf("- Zombie process found: PID %d (%s) PPID %d\n", pid, comm, ppid);
+                    } else { // is_orphan
+                        printf("- Orphaned worker found: PID %d (%s)\n", pid, comm);
+                        if (force) {
+                            printf("  -> Sending SIGKILL to PID %d\n", pid);
+                        }
+                    }
+                }
+                if (is_orphan && force) {
                     kill(pid, SIGKILL);
                 }
+                found++;
             }
         }
         fclose(fp);
     }
     closedir(dir);
-    
-    if (!found) {
-        printf("System is clean. No zombies or orphaned workers found.\n");
-    } else if (!force) {
-        printf("\nRun 'mops task clean --force' to aggressively terminate orphaned workers.\n");
+
+    if (json) {
+        printf("]\n");
+    } else {
+        if (!found) {
+            printf("System is clean. No zombies or orphaned workers found.\n");
+        } else if (!force) {
+            printf("\nRun 'mops task clean --force' to aggressively terminate orphaned workers.\n");
+        }
     }
     
     return 0;
@@ -477,7 +554,9 @@ int cmd_task(int argc, char **argv) {
         printf("  list      List all tracked tasks and their status\n");
         printf("  logs      Read or tail stdout/stderr for a task (<id> [--tail])\n");
         printf("  clean     Sweep zombie processes and orphaned workers ([--force])\n");
-        printf("  kill      Send SIGTERM to a running task (<id>)\n");
+        printf("  kill      Send SIGTERM to a running task (<id>)\n\n");
+        printf("Options:\n");
+        printf("  --json    Output in JSON format (for 'list' and 'clean')\n");
         return 0;
     }
 
