@@ -1,0 +1,29 @@
+# Build output
+obj/
+*.o
+mops
+mops.dSYM/
+
+# Database files
+mops.db
+mops.db-journal
+mops.db-shm
+mops.db-wal
+
+# Debian packaging artifacts
+*.deb
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
