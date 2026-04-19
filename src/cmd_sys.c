@@ -249,7 +249,7 @@ int cmd_sys_gpu(int argc, char **argv) {
     if (json) printf("]\n");
     int status = pclose(fp);
 
-    if (first && !json) {
+    if ((first && !json) || WEXITSTATUS(status) != 0) {
         if (human_readable) {
             printf("No NVIDIA GPU found, or nvidia-smi is not in PATH.\n");
         }
