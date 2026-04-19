@@ -354,24 +354,24 @@ static int cmd_task_list(int argc, char **argv) {
     char sql[1024];
     char where[512];
     where[0] = '\0';
-    int need_where = 0;
-    /* time column for filtering */
     const char *tcol = "COALESCE(started_at, timestamp)";
+    const char *prefix = "";
     if (status_filter) {
         snprintf(where + strlen(where), sizeof(where) - strlen(where),
-                 "%sstatus = ?", need_where ? " AND " : "");
-        need_where = 1;
+                 "%sstatus = ?", prefix);
+        prefix = " AND ";
     }
     if (since_filter) {
         snprintf(where + strlen(where), sizeof(where) - strlen(where),
-                 "%s%s >= ?", need_where ? " AND " : "", tcol);
-        need_where = 1;
+                 "%s%s >= ?", prefix, tcol);
+        prefix = " AND ";
     }
     if (until_filter) {
         snprintf(where + strlen(where), sizeof(where) - strlen(where),
-                 "%s%s <= ?", need_where ? " AND " : "", tcol);
-        need_where = 1;
+                 "%s%s <= ?", prefix, tcol);
+        prefix = " AND ";
     }
+    int need_where = (*prefix != '\0');
     /* map order_by to a safe column */
     const char *obcol = "id";
     if (order_by) {
@@ -669,26 +669,21 @@ static int cmd_task_purge(int argc, char **argv) {
  
     const char *tcol = "COALESCE(finished_at, started_at, timestamp)";
     char where[512]; where[0] = '\0';
-    int need_where = 0;
+    const char *prefix = "";
     if (status_filter) {
         snprintf(where + strlen(where), sizeof(where) - strlen(where),
-                 "%sstatus = ?", need_where ? " AND " : "");
-        need_where = 1;
+                 "%sstatus = ?", prefix);
+        prefix = " AND ";
     }
     snprintf(where + strlen(where), sizeof(where) - strlen(where),
-             "%s%s <= ?", need_where ? " AND " : "", tcol);
-    need_where = 1;
+             "%s%s <= ?", prefix, tcol);
     if (!force) {
         snprintf(where + strlen(where), sizeof(where) - strlen(where),
                  " AND status != 'RUNNING'");
     }
  
     char sql[1024];
-    if (need_where) {
-        snprintf(sql, sizeof(sql), "SELECT id, pid, status FROM tasks WHERE %s", where);
-    } else {
-        snprintf(sql, sizeof(sql), "SELECT id, pid, status FROM tasks");
-    }
+    snprintf(sql, sizeof(sql), "SELECT id, pid, status FROM tasks WHERE %s", where);
  
     sqlite3_stmt *stmt;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {

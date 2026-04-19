@@ -19,8 +19,8 @@
  */
 static const char* get_pid_file(void) {
     const char *p = getenv("MOPS_PID_FILE");
-    static char buf[512];
     if (p && *p) {
+        static char buf[512];
         strncpy(buf, p, sizeof(buf) - 1);
         buf[sizeof(buf) - 1] = '\0';
         return buf;
