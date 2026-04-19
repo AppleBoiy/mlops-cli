@@ -181,6 +181,9 @@ def test_bg_immediate(build_binary, base_env):
     assert any(t["status"] in ("FINISHED", "FAILED") for t in tasks2)
 
 
+@pytest.mark.skipif(
+    platform.system() != "Linux", reason="Linux-only: worker-based tests"
+)
 @pytest.mark.timeout(60)
 def test_worker_qsub_end_to_end(worker_session, build_binary, base_env):
     mops_bin = build_binary
