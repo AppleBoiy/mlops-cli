@@ -14,13 +14,14 @@ extern int cmd_task(int argc, char **argv);
 extern int db_init(void);
 
 void print_usage(const char *prog_name) {
+    printf("mops - Multipurpose Operations CLI\n\n");
     printf("Usage: %s <command> [options]\n\n", prog_name);
     printf("Commands:\n");
     printf("  disk      Disk operations (status, usage, mounts)\n");
-    printf("  sys       System & Hardware metrics (cpu, gpu, tpu)\n");
+    printf("  sys       System & Hardware metrics (cpu, gpu, tpu, oom, cgroup)\n");
     printf("  net       Network operations (port)\n");
 #ifdef DEV_MODE
-    printf("  task      Task management (exec, bg, queue, list, kill)\n");
+    printf("  task      Task management (exec, bg, queue, list, logs, clean, kill)\n");
 #endif
     printf("\nRun '%s <command> --help' for more information on a command.\n", prog_name);
 }

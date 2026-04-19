@@ -392,20 +392,25 @@ int cmd_sys_cgroup(int argc, char **argv) {
 
 int cmd_sys(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: mops sys <cpu|gpu|tpu|oom|cgroup> [--help]\n");
+        fprintf(stderr, "Usage: mops sys <cpu|gpu|tpu|oom|cgroup> [-h] [-l] [--pids]\n");
+        fprintf(stderr, "Run 'mops sys --help' for more information.\n");
         return 1;
     }
 
     const char *subcmd = argv[1];
 
     if (strcmp(subcmd, "--help") == 0 || strcmp(subcmd, "-h") == 0) {
-        printf("Usage: mops sys <command> [options]\n\n");
+        printf("Usage: mops sys <cpu|gpu|tpu|oom|cgroup> [-h] [-l] [--pids]\n\n");
         printf("Commands:\n");
-        printf("  cpu       Show CPU utilization (-h for human readable, -l for long format)\n");
-        printf("  gpu       Show GPU utilization (-h for human readable, -l for long format, --pids for processes)\n");
-        printf("  tpu       Show TPU availability (-h for human readable, -l for long format)\n");
+        printf("  cpu       Show CPU utilization\n");
+        printf("  gpu       Show GPU utilization\n");
+        printf("  tpu       Show TPU availability\n");
         printf("  oom       List Out-Of-Memory killed processes from dmesg\n");
-        printf("  cgroup    Show Cgroup / Docker container resource limits and usage\n");
+        printf("  cgroup    Show Cgroup / Docker container resource limits and usage\n\n");
+        printf("Flags:\n");
+        printf("  -h        Human-readable output\n");
+        printf("  -l        Long format (include extra information columns)\n");
+        printf("  --pids    Map active processes to GPU allocations (for 'gpu' command)\n");
         return 0;
     }
 
@@ -421,7 +426,8 @@ int cmd_sys(int argc, char **argv) {
         return cmd_sys_cgroup(argc - 1, argv + 1);
     } else {
         fprintf(stderr, "Unknown sys command: %s\n", subcmd);
-        fprintf(stderr, "Available commands: cpu, gpu, tpu, oom, cgroup\n");
+        fprintf(stderr, "Usage: mops sys <cpu|gpu|tpu|oom|cgroup> [-h] [-l] [--pids]\n");
+        fprintf(stderr, "Run 'mops sys --help' for more information.\n");
         return 1;
     }
 }

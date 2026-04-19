@@ -149,22 +149,31 @@ static int do_disk_mounts(int human, int long_fmt) {
 }
 
 int cmd_disk(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: mops disk <command> [options]\n");
+        return 1;
+    }
+
+    const char *first_arg = argv[1];
+
+    if (strcmp(first_arg, "--help") == 0 || strcmp(first_arg, "-h") == 0) {
+        printf("Usage: mops disk <command> [options]\n\n");
+        printf("Commands:\n");
+        printf("  status    Show disk read/write statistics\n");
+        printf("  usage     Show total, used, and free space on root filesystem\n");
+        printf("  mounts    Display currently mounted drives from /proc/mounts\n\n");
+        printf("Options:\n");
+        printf("  -h        Human-readable output\n");
+        printf("  -l        Long format (include extra information columns)\n");
+        return 0;
+    }
+
     const char *subcmd = NULL;
     int human = 0;
     int long_fmt = 0;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--help") == 0) {
-            printf("Usage: mops disk <status|usage|mounts> [-h] [-l]\n\n");
-            printf("Commands:\n");
-            printf("  status    Show disk read/write statistics\n");
-            printf("  usage     Show total, used, and free space on root filesystem\n");
-            printf("  mounts    Display currently mounted drives from /proc/mounts\n\n");
-            printf("Flags:\n");
-            printf("  -h        Human-readable output\n");
-            printf("  -l        Long format (include extra information columns)\n");
-            return 0;
-        } else if (strcmp(argv[i], "-h") == 0) {
+        if (strcmp(argv[i], "-h") == 0) {
             human = 1;
         } else if (strcmp(argv[i], "-l") == 0) {
             long_fmt = 1;
@@ -177,7 +186,7 @@ int cmd_disk(int argc, char **argv) {
     }
 
     if (!subcmd) {
-        fprintf(stderr, "Usage: mops disk <status|usage|mounts> [-h] [-l]\n");
+        fprintf(stderr, "Usage: mops disk <command> [options]\n");
         fprintf(stderr, "Run 'mops disk --help' for more information.\n");
         return 1;
     }
@@ -190,7 +199,7 @@ int cmd_disk(int argc, char **argv) {
         return do_disk_mounts(human, long_fmt);
     } else {
         fprintf(stderr, "Unknown disk command: %s\n", subcmd);
-        fprintf(stderr, "Usage: mops disk <status|usage|mounts> [-h] [-l]\n");
+        fprintf(stderr, "Usage: mops disk <command> [options]\n");
         fprintf(stderr, "Run 'mops disk --help' for more information.\n");
         return 1;
     }

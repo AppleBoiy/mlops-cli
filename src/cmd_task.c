@@ -466,18 +466,16 @@ int cmd_task(int argc, char **argv) {
 
     const char *subcmd = argv[1];
     
-    if (strcmp(subcmd, "-h") == 0 || strcmp(subcmd, "--help") == 0) {
-        printf("Task Management Operations:\n\n");
-        printf("Usage: mops task <command> [args...]\n\n");
+    if (strcmp(subcmd, "--help") == 0 || strcmp(subcmd, "-h") == 0) {
+        printf("Usage: mops task <command> [options]\n\n");
         printf("Commands:\n");
-        printf("  exec \"<cmd>\" [--notify <url>]   Execute a command synchronously\n");
-        printf("  bg \"<cmd>\" [--notify <url>]     Start a background task and track it\n");
-        printf("  queue \"<cmd>\"                   Add a command to the task queue\n");
-        printf("  queue --exec                    Execute all queued tasks sequentially\n");
-        printf("  list                            List all tracked tasks and their status\n");
-        printf("  logs <id> [--tail]              Read or tail stdout/stderr for a task\n");
-        printf("  clean [--force]                 Sweep zombie processes and orphaned workers\n");
-        printf("  kill <id>                       Send SIGTERM to a running task\n");
+        printf("  exec      Execute a command synchronously (\"<cmd>\" [--notify <url>])\n");
+        printf("  bg        Start a background task and track it (\"<cmd>\" [--notify <url>])\n");
+        printf("  queue     Add a command to the task queue (\"<cmd>\" | --exec)\n");
+        printf("  list      List all tracked tasks and their status\n");
+        printf("  logs      Read or tail stdout/stderr for a task (<id> [--tail])\n");
+        printf("  clean     Sweep zombie processes and orphaned workers ([--force])\n");
+        printf("  kill      Send SIGTERM to a running task (<id>)\n");
         return 0;
     }
 
@@ -498,6 +496,7 @@ int cmd_task(int argc, char **argv) {
     } else {
         fprintf(stderr, "Unknown task subcommand: %s\n", subcmd);
         fprintf(stderr, "Usage: mops task <exec|bg|queue|list|logs|clean|kill> [args...]\n");
+        fprintf(stderr, "Run 'mops task --help' for more information.\n");
         return 1;
     }
 }

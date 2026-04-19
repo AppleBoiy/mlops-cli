@@ -112,15 +112,16 @@ static void find_process_by_inode(unsigned long target_inode) {
  * Handle `mops net port <number>`
  */
 int cmd_net_port(int argc, char **argv) {
-    if (argc < 1) {
-        fprintf(stderr, "Usage: mops net port <number>\n");
-        return 1;
-    }
-
-    if (strcmp(argv[0], "--help") == 0 || strcmp(argv[0], "-h") == 0) {
+    if (argc > 0 && (strcmp(argv[0], "--help") == 0 || strcmp(argv[0], "-h") == 0)) {
         printf("Usage: mops net port <number>\n\n");
         printf("Finds the exact process ID (PID) and command line associated with a local TCP port.\n");
         return 0;
+    }
+
+    if (argc < 1) {
+        fprintf(stderr, "Usage: mops net port <number>\n");
+        fprintf(stderr, "Run 'mops net --help' for more information.\n");
+        return 1;
     }
 
     int port = atoi(argv[0]);
@@ -155,7 +156,8 @@ int cmd_net_port(int argc, char **argv) {
  */
 int cmd_net(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: mops net <subcommand> [args...]\n");
+        fprintf(stderr, "Usage: mops net <subcommand> [options]\n");
+        fprintf(stderr, "Run 'mops net --help' for more information.\n");
         return 1;
     }
 
@@ -170,7 +172,8 @@ int cmd_net(int argc, char **argv) {
         return cmd_net_port(argc - 2, argv + 2);
     } else {
         fprintf(stderr, "Unknown net subcommand: %s\n", subcmd);
-        fprintf(stderr, "Usage: mops net <subcommand> [args...]\n");
+        fprintf(stderr, "Usage: mops net <subcommand> [options]\n");
+        fprintf(stderr, "Run 'mops net --help' for more information.\n");
         return 1;
     }
 }
