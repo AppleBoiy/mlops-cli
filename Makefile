@@ -1,6 +1,9 @@
 CC ?= gcc
-CFLAGS = -Wall -Wextra -std=c11 -O2 -g -D_XOPEN_SOURCE=700
-LDFLAGS = -lsqlite3 -ldl
+CFLAGS = -Wall -Wextra -std=c11 -O2 -g -D_XOPEN_SOURCE=700 -MMD -MP
+LDFLAGS ?= 
+LDLIBS = -lsqlite3 -ldl
+
+VERSION ?= 1.0.0
 
 TARGET = mops
 SRC_DIR = src
@@ -8,6 +11,7 @@ OBJ_DIR = obj
 
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
+DEPS = $(OBJS:.o=.d)
 
 PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
@@ -32,10 +36,12 @@ directories:
 	@mkdir -p $(OBJ_DIR)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | directories
 	$(CC) $(CFLAGS) -c $< -o $@
+
+-include $(DEPS)
 
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET) deb-build *.deb
@@ -63,7 +69,7 @@ deb: all
 	@echo "Building Debian package..."
 	mkdir -p deb-build/DEBIAN
 	@echo "Package: mops" > deb-build/DEBIAN/control
-	@echo "Version: 1.0.0" >> deb-build/DEBIAN/control
+	@echo "Version: $(VERSION)" >> deb-build/DEBIAN/control
 	@echo "Section: utils" >> deb-build/DEBIAN/control
 	@echo "Priority: optional" >> deb-build/DEBIAN/control
 	@echo "Architecture: $$(dpkg --print-architecture 2>/dev/null || echo amd64)" >> deb-build/DEBIAN/control
@@ -73,5 +79,5 @@ deb: all
 	@echo " mops is a centralized utility for Linux system monitoring, hardware metrics," >> deb-build/DEBIAN/control
 	@echo " containerized environment tracking, and background task management." >> deb-build/DEBIAN/control
 	$(MAKE) install DESTDIR=deb-build PREFIX=/usr
-	dpkg-deb --build deb-build mops_1.0.0_$$(dpkg --print-architecture 2>/dev/null || echo amd64).deb
+	dpkg-deb --build deb-build mops_$(VERSION)_$$(dpkg --print-architecture 2>/dev/null || echo amd64).deb
 	rm -rf deb-build
