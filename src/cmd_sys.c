@@ -35,11 +35,11 @@ static int read_cpu_stat(struct cpu_stat *st) {
     return 0;
 }
 
-static unsigned long long get_idle_time(struct cpu_stat *st) {
+static unsigned long long get_idle_time(const struct cpu_stat *st) {
     return st->idle + st->iowait;
 }
 
-static unsigned long long get_total_time(struct cpu_stat *st) {
+static unsigned long long get_total_time(const struct cpu_stat *st) {
     return st->user + st->nice + st->system + st->idle +
            st->iowait + st->irq + st->softirq + st->steal;
 }
@@ -318,13 +318,13 @@ int cmd_sys_gpu(int argc, char **argv) {
         /*
          * Simple manual split based on commas to format output nicely.
          */
-        char *idx = strtok(line, ",");
-        char *name = strtok(NULL, ",");
-        char *mem_used = strtok(NULL, ",");
-        char *mem_total = strtok(NULL, ",");
-        char *util = strtok(NULL, ",");
-        char *temp = long_format ? strtok(NULL, ",") : NULL;
-        char *power = long_format ? strtok(NULL, ",") : NULL;
+        const char *idx = strtok(line, ",");
+        const char *name = strtok(NULL, ",");
+        const char *mem_used = strtok(NULL, ",");
+        const char *mem_total = strtok(NULL, ",");
+        const char *util = strtok(NULL, ",");
+        const char *temp = long_format ? strtok(NULL, ",") : NULL;
+        const char *power = long_format ? strtok(NULL, ",") : NULL;
 
         if (idx && name && mem_used && mem_total && util) {
             if (json) {

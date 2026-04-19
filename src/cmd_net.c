@@ -13,7 +13,7 @@ static void find_process_by_inode(unsigned long target_inode, int json) {
         return;
     }
 
-    struct dirent *proc_ent;
+    const struct dirent *proc_ent;
     while ((proc_ent = readdir(proc_dir)) != NULL) {
         /* Check if directory name is numeric (indicates a PID) */
         if (!isdigit(proc_ent->d_name[0])) continue;
@@ -24,7 +24,7 @@ static void find_process_by_inode(unsigned long target_inode, int json) {
         DIR *fd_dir = opendir(fd_path);
         if (!fd_dir) continue;
 
-        struct dirent *fd_ent;
+        const struct dirent *fd_ent;
         while ((fd_ent = readdir(fd_dir)) != NULL) {
             if (fd_ent->d_name[0] == '.') continue;
 

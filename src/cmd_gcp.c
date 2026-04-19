@@ -170,8 +170,8 @@ static int cmd_gcp_tunnel(int argc, char **argv) {
     char ports[256];
     strncpy(ports, argv[1], sizeof(ports) - 1);
     
-    char *remote = strtok(ports, ":");
-    char *local = strtok(NULL, ":");
+    const char *remote = strtok(ports, ":");
+    const char *local = strtok(NULL, ":");
     
     if (!remote || !local) {
         fprintf(stderr, "Error: Ports must be formatted as <remote-port>:<local-port> (e.g., 6006:8080)\n");
@@ -215,7 +215,7 @@ static int cmd_gcp_run_with_secrets(int argc, char **argv) {
     strncpy(mapping, argv[0] + 9, sizeof(mapping) - 1);
     
     char *env_var = strtok(mapping, "=");
-    char *secret_name = strtok(NULL, "=");
+    const char *secret_name = strtok(NULL, "=");
     
     if (!env_var || !secret_name) {
         fprintf(stderr, "Error: Secret format must be ENV_VAR=SECRET_NAME\n");

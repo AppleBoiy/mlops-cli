@@ -11,13 +11,6 @@
  * Dashboard Metric Helpers
  */
 
-struct dashboard_stats {
-    double cpu_usage;
-    unsigned long long mem_total;
-    unsigned long long mem_used;
-    int task_count;
-};
-
 static void get_mem_stats(unsigned long long *total, unsigned long long *used) {
     FILE *fp = fopen("/proc/meminfo", "r");
     if (!fp) return;

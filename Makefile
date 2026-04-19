@@ -94,7 +94,7 @@ test: all
 	fi
 
 lint:
-	cppcheck --enable=all --suppress=missingIncludeSystem $(SRC_DIR)/*.c
+	cppcheck --enable=all --suppress=missingIncludeSystem -I$(SRC_DIR) -I$(LIB_DIR) $(SRC_DIR)/*.c
 
 format:
 	clang-format -i $(SRC_DIR)/*.c
