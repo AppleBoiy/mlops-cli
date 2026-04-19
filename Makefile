@@ -73,7 +73,7 @@ deb: all
 	@echo "Section: utils" >> deb-build/DEBIAN/control
 	@echo "Priority: optional" >> deb-build/DEBIAN/control
 	@echo "Architecture: $$(dpkg --print-architecture 2>/dev/null || echo amd64)" >> deb-build/DEBIAN/control
-	@echo "Depends: libsqlite3-0" >> deb-build/DEBIAN/control
+	@echo "Depends: libsqlite3-0, libncurses6 | libncurses5" >> deb-build/DEBIAN/control
 	@echo "Maintainer: Chaipat J. <contact.chaipat@gmail.com>" >> deb-build/DEBIAN/control
 	@echo "Description: Multipurpose Operations CLI for DevOps and MLOps" >> deb-build/DEBIAN/control
 	@echo " mops is a centralized utility for Linux system monitoring, hardware metrics," >> deb-build/DEBIAN/control

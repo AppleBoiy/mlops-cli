@@ -5,10 +5,10 @@ mops is a lightweight, dependency-free, high-performance C utility for MLOps eng
 
 Build from Source
 -----------------
-You will need `gcc` (or `clang`), `make`, and `libsqlite3-dev`.
+You will need `gcc` (or `clang`), `make`, `libsqlite3-dev`, and `libncurses-dev`.
 
     # Install dependencies (on Debian/Ubuntu)
-    sudo apt-get update && sudo apt-get install -y build-essential libsqlite3-dev
+    sudo apt-get update && sudo apt-get install -y build-essential libsqlite3-dev libncurses-dev
 
     # Build standard release
     make
