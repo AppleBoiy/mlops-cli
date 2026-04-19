@@ -134,10 +134,11 @@ static void run_worker_loop(void) {
             const char *cmd = (const char *)sqlite3_column_text(stmt, 1);
             const char *notify_url = has_notify ? (const char *)sqlite3_column_text(stmt, 2) : NULL;
 
-            char cmd_buf[2048];
+            char cmd_buf[2048] = {0};
             char notify_url_buf[2048] = {0};
-            strncpy(cmd_buf, cmd, sizeof(cmd_buf) - 1);
-            cmd_buf[sizeof(cmd_buf) - 1] = '\0';
+            if (cmd) {
+                strncpy(cmd_buf, cmd, sizeof(cmd_buf) - 1);
+            }
             if (notify_url) {
                 strncpy(notify_url_buf, notify_url, sizeof(notify_url_buf) - 1);
                 notify_url_buf[sizeof(notify_url_buf) - 1] = '\0';
@@ -145,20 +146,22 @@ static void run_worker_loop(void) {
             
             sqlite3_finalize(stmt);
 
-            sqlite3_stmt *update_stmt;
-            sqlite3_prepare_v2(db, "UPDATE tasks SET status = 'RUNNING', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE id = ?", -1, &update_stmt, NULL);
-            sqlite3_bind_int(update_stmt, 1, task_id);
-            sqlite3_step(update_stmt);
-            sqlite3_finalize(update_stmt);
+            sqlite3_stmt *update_stmt = NULL;
+            if (sqlite3_prepare_v2(db, "UPDATE tasks SET status = 'RUNNING', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE id = ?", -1, &update_stmt, NULL) == SQLITE_OK) {
+                sqlite3_bind_int(update_stmt, 1, task_id);
+                sqlite3_step(update_stmt);
+                sqlite3_finalize(update_stmt);
+            }
 
             /* Fork and exec the task, record PID, redirect logs, and wait */
             pid_t cpid = fork();
             if (cpid < 0) {
                 /* Fork failed: mark task as FAILED */
-                sqlite3_prepare_v2(db, "UPDATE tasks SET status = 'FAILED', exit_code = 1, finished_at = CURRENT_TIMESTAMP WHERE id = ?", -1, &update_stmt, NULL);
-                sqlite3_bind_int(update_stmt, 1, task_id);
-                sqlite3_step(update_stmt);
-                sqlite3_finalize(update_stmt);
+                if (sqlite3_prepare_v2(db, "UPDATE tasks SET status = 'FAILED', exit_code = 1, finished_at = CURRENT_TIMESTAMP WHERE id = ?", -1, &update_stmt, NULL) == SQLITE_OK) {
+                    sqlite3_bind_int(update_stmt, 1, task_id);
+                    sqlite3_step(update_stmt);
+                    sqlite3_finalize(update_stmt);
+                }
                 continue;
             }
 
@@ -182,17 +185,18 @@ static void run_worker_loop(void) {
                     close(fd_out);
                 }
 
-                execl("/bin/sh", "sh", "-lc", cmd_buf, (char*)NULL);
+                execl("/bin/sh", "sh", "-c", cmd_buf, (char*)NULL);
                 _exit(127); /* exec failed */
             } else {
                 /* Parent (worker): record PID, wait, update status */
                 current_child = cpid;
 
-                sqlite3_prepare_v2(db, "UPDATE tasks SET pid = ? WHERE id = ?", -1, &update_stmt, NULL);
-                sqlite3_bind_int(update_stmt, 1, (int)cpid);
-                sqlite3_bind_int(update_stmt, 2, task_id);
-                sqlite3_step(update_stmt);
-                sqlite3_finalize(update_stmt);
+                if (sqlite3_prepare_v2(db, "UPDATE tasks SET pid = ? WHERE id = ?", -1, &update_stmt, NULL) == SQLITE_OK) {
+                    sqlite3_bind_int(update_stmt, 1, (int)cpid);
+                    sqlite3_bind_int(update_stmt, 2, task_id);
+                    sqlite3_step(update_stmt);
+                    sqlite3_finalize(update_stmt);
+                }
 
                 int wstatus = 0;
                 if (waitpid(cpid, &wstatus, 0) < 0) {
@@ -200,15 +204,25 @@ static void run_worker_loop(void) {
                 }
                 current_child = -1;
 
-                int exit_code = (WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : 1);
-                const char *final_status = (exit_code == 0) ? "FINISHED" : "FAILED";
+                int exit_code = 1;
+                const char *final_status = "FAILED";
+                if (WIFEXITED(wstatus)) {
+                    exit_code = WEXITSTATUS(wstatus);
+                    final_status = (exit_code == 0) ? "FINISHED" : "FAILED";
+                } else if (WIFSIGNALED(wstatus)) {
+                    exit_code = 128 + WTERMSIG(wstatus);
+                    if (WTERMSIG(wstatus) == SIGTERM || WTERMSIG(wstatus) == SIGKILL) {
+                        final_status = "KILLED";
+                    }
+                }
 
-                sqlite3_prepare_v2(db, "UPDATE tasks SET status = ?, exit_code = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?", -1, &update_stmt, NULL);
-                sqlite3_bind_text(update_stmt, 1, final_status, -1, SQLITE_STATIC);
-                sqlite3_bind_int(update_stmt, 2, exit_code);
-                sqlite3_bind_int(update_stmt, 3, task_id);
-                sqlite3_step(update_stmt);
-                sqlite3_finalize(update_stmt);
+                if (sqlite3_prepare_v2(db, "UPDATE tasks SET status = ?, exit_code = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?", -1, &update_stmt, NULL) == SQLITE_OK) {
+                    sqlite3_bind_text(update_stmt, 1, final_status, -1, SQLITE_STATIC);
+                    sqlite3_bind_int(update_stmt, 2, exit_code);
+                    sqlite3_bind_int(update_stmt, 3, task_id);
+                    sqlite3_step(update_stmt);
+                    sqlite3_finalize(update_stmt);
+                }
 
                 if (strlen(notify_url_buf) > 0) {
                     notify_webhook_from_worker(task_id, exit_code, notify_url_buf);
