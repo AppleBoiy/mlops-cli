@@ -18,6 +18,10 @@ int db_init(void) {
         return -1;
     }
 
+    /* Improve concurrency: wait up to 5 seconds for busy locks and enable WAL mode */
+    sqlite3_busy_timeout(db, 5000);
+    sqlite3_exec(db, "PRAGMA journal_mode=WAL;", 0, 0, NULL);
+
     const char *sql = "CREATE TABLE IF NOT EXISTS tasks ("
                       "id INTEGER PRIMARY KEY AUTOINCREMENT, "
                       "pid INTEGER, "
@@ -30,18 +34,29 @@ int db_init(void) {
                       "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
 
     char *err_msg = NULL;
-    rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
-    if (rc == SQLITE_OK) {
-        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN notify_url TEXT;", 0, 0, NULL);
-        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN exit_code INTEGER;", 0, 0, NULL);
-        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN started_at DATETIME;", 0, 0, NULL);
-        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN finished_at DATETIME;", 0, 0, NULL);
-    }
+    int attempts = 0;
+    do {
+        rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
+        if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+            if (err_msg) { sqlite3_free(err_msg); err_msg = NULL; }
+            sqlite3_sleep(50); /* wait 50ms and retry */
+            attempts++;
+            continue;
+        }
+        break;
+    } while (attempts < 100);
+
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "Failed to create table: %s\n", err_msg);
-        sqlite3_free(err_msg);
+        fprintf(stderr, "Failed to create table: %s\n", err_msg ? err_msg : sqlite3_errmsg(db));
+        if (err_msg) sqlite3_free(err_msg);
         return -1;
     }
+
+    /* Best-effort schema migrations; ignore errors like duplicate columns or transient locks */
+    sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN notify_url TEXT;", 0, 0, NULL);
+    sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN exit_code INTEGER;", 0, 0, NULL);
+    sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN started_at DATETIME;", 0, 0, NULL);
+    sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN finished_at DATETIME;", 0, 0, NULL);
 
     return 0;
 }
