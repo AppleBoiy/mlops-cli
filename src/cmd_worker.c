@@ -128,7 +128,7 @@ static int daemonize() {
     return 0;
 }
 
-static int cmd_worker_start(int argc, char **argv) {
+int cmd_worker_start(int argc, char **argv) {
     (void)argc; (void)argv;
 
     FILE *fp = fopen(PID_FILE, "r");
@@ -159,7 +159,7 @@ static int cmd_worker_start(int argc, char **argv) {
     return 0;
 }
 
-static int cmd_worker_stop(int argc, char **argv) {
+int cmd_worker_stop(int argc, char **argv) {
     (void)argc; (void)argv;
 
     FILE *fp = fopen(PID_FILE, "r");
@@ -195,7 +195,7 @@ static int cmd_worker_stop(int argc, char **argv) {
     return 0;
 }
 
-static int cmd_worker_status(int argc, char **argv) {
+int cmd_worker_status(int argc, char **argv) {
     (void)argc; (void)argv;
     
     FILE *fp = fopen(PID_FILE, "r");

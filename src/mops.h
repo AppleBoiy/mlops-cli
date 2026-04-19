@@ -55,7 +55,7 @@ int cmd_task_clean(int argc, char **argv);
  * Worker Operations
  */
 int cmd_worker_start(int argc, char **argv);
-int cmd_worder_stop(int argc, char **argv);
+int cmd_worker_stop(int argc, char **argv);
 int cmd_worker_status(int argc, char **argv);
 
 
