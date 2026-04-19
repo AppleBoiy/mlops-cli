@@ -10,10 +10,14 @@
 #include <sqlite3.h>
 #include "mops.h"
 
+#ifdef DEV_MODE
+
 /* Declare external DB function from db.c */
 extern sqlite3* db_get_connection(void);
 
-/* --- Database Helpers --- */
+/*
+ * Database Helpers
+ */
 
 static void insert_task(int pid, const char *cmd, const char *status) {
     sqlite3 *db = db_get_connection();
@@ -48,7 +52,9 @@ static void update_task_status(int id, const char *status) {
     }
 }
 
-/* --- Subcommand Implementations --- */
+/*
+ * Subcommand Implementations
+ */
 
 int cmd_task_exec(int argc, char **argv) {
     if (argc < 2) {
@@ -90,12 +96,16 @@ int cmd_task_bg(int argc, char **argv) {
     } else {
         /* Child process */
         
-        /* 1. Create a new session and detach from controlling terminal */
+        /*
+         * 1. Create a new session and detach from controlling terminal
+         */
         if (setsid() < 0) {
             exit(EXIT_FAILURE);
         }
         
-        /* 2. Redirect standard I/O */
+        /*
+         * 2. Redirect standard I/O
+         */
         int fd_in = open("/dev/null", O_RDONLY);
         int fd_out = open("/tmp/mops_bg.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
         
@@ -109,15 +119,18 @@ int cmd_task_bg(int argc, char **argv) {
             close(fd_out);
         }
         
-        /* 3. Execute the command via shell */
+        /*
+         * 3. Execute the command via shell
+         */
         execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
         
-        /* 4. Exit if execl fails */
+        /*
+         * 4. Exit if execl fails
+         */
         exit(EXIT_FAILURE);
     }
 }
 
-#ifdef DEV_MODE
 int cmd_task_queue(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task queue \"<command>\" | --exec\n");
@@ -166,7 +179,6 @@ int cmd_task_queue(int argc, char **argv) {
     printf("Task added to queue: %s\n", cmd);
     return 0;
 }
-#endif
 
 int cmd_task_list(int argc, char **argv) {
     (void)argc;
@@ -198,10 +210,15 @@ int cmd_task_list(int argc, char **argv) {
         char current_status[32];
         snprintf(current_status, sizeof(current_status), "%s", status);
         
-        /* Check if a running task is actually still alive */
+        /*
+         * Check if a running task is actually still alive.
+         */
         if (strcmp(current_status, "RUNNING") == 0) {
             if (kill(pid, 0) != 0) {
-                /* Process doesn't exist or we have no permission; assume dead */
+                /*
+                 * Process doesn't exist or we have no permission;
+                 * assume dead.
+                 */
                 snprintf(current_status, sizeof(current_status), "FINISHED");
                 update_task_status(id, "FINISHED");
             }
@@ -261,15 +278,13 @@ int cmd_task_kill(int argc, char **argv) {
     return 0;
 }
 
-/* --- Main Dispatcher --- */
+/*
+ * Main Dispatcher
+ */
 
 int cmd_task(int argc, char **argv) {
     if (argc < 2) {
-#ifdef DEV_MODE
         fprintf(stderr, "Usage: mops task <exec|bg|queue|list|kill> [args...]\n");
-#else
-        fprintf(stderr, "Usage: mops task <exec|bg|list|kill> [args...]\n");
-#endif
         return 1;
     }
 
@@ -279,21 +294,26 @@ int cmd_task(int argc, char **argv) {
         return cmd_task_exec(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "bg") == 0) {
         return cmd_task_bg(argc - 1, argv + 1);
-#ifdef DEV_MODE
     } else if (strcmp(subcmd, "queue") == 0) {
         return cmd_task_queue(argc - 1, argv + 1);
-#endif
     } else if (strcmp(subcmd, "list") == 0) {
         return cmd_task_list(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "kill") == 0) {
         return cmd_task_kill(argc - 1, argv + 1);
     } else {
         fprintf(stderr, "Unknown task subcommand: %s\n", subcmd);
-#ifdef DEV_MODE
         fprintf(stderr, "Usage: mops task <exec|bg|queue|list|kill> [args...]\n");
-#else
-        fprintf(stderr, "Usage: mops task <exec|bg|list|kill> [args...]\n");
-#endif
         return 1;
     }
 }
+
+#else
+
+int cmd_task(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    fprintf(stderr, "Error: The 'task' command is only available when built with DEV_MODE.\n");
+    return 1;
+}
+
+#endif
