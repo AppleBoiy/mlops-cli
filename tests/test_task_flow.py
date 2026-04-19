@@ -56,6 +56,11 @@ def base_env(temp_db_path, monkeypatch):
     # Provide a clean environment for each test with isolated DB
     env = os.environ.copy()
     env["MOPS_DB_PATH"] = temp_db_path
+    # Faster worker polling for tests
+    env["MOPS_POLL_INTERVAL"] = "1"
+    # Use per-test PID file colocated with the DB to avoid collisions
+    pid_dir = os.path.dirname(temp_db_path)
+    env["MOPS_PID_FILE"] = os.path.join(pid_dir, "mops_worker.pid")
     # Keep PATH as-is; we run the binary via explicit path
     return env
 
@@ -81,6 +86,10 @@ def worker_session(build_binary, base_env):
 
     # Start worker
     run_cmd([mops_bin, "worker", "start"], env=base_env)
+    for _ in range(20):
+        if _worker_running(base_env, mops_bin):
+            break
+        time.sleep(0.1)
     assert _worker_running(base_env, mops_bin), "Worker failed to start"
 
     yield

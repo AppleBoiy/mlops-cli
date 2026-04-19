@@ -13,8 +13,39 @@
 #include <time.h>
 #include "mops.h"
 
-#define PID_FILE "/tmp/mops_worker.pid"
-#define POLL_INTERVAL 5 /* seconds */
+/* Configurable via environment:
+ * - MOPS_PID_FILE: overrides default PID file path (/tmp/mops_worker.pid)
+ * - MOPS_POLL_INTERVAL: overrides default poll interval seconds (5)
+ */
+static const char* get_pid_file(void) {
+    const char *p = getenv("MOPS_PID_FILE");
+    static char buf[512];
+    if (p && *p) {
+        strncpy(buf, p, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        return buf;
+    }
+    return "/tmp/mops_worker.pid";
+}
+
+static int get_poll_interval(void) {
+    const char *p = getenv("MOPS_POLL_INTERVAL");
+    if (p && *p) {
+        char *end = NULL;
+        long v = strtol(p, &end, 10);
+        if (end && *end == '\0' && v > 0 && v < 3600) {
+            return (int)v;
+        }
+    }
+    const char *ci = getenv("CI");
+    if (ci && *ci) {
+        return 1;
+    }
+    return 5;
+}
+
+#define PID_FILE get_pid_file()
+#define POLL_INTERVAL get_poll_interval()
 
 static volatile int running = 1;
 static volatile pid_t current_child = -1;
@@ -168,7 +199,8 @@ static void run_worker_loop(void) {
             }
         }
         
-        sleep(POLL_INTERVAL);
+        struct timespec ts = {0, 200000000};
+        nanosleep(&ts, NULL);
     }
     remove(PID_FILE);
 }
