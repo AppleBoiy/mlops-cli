@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS = -Wall -Wextra -std=c11 -O2 -g
+CFLAGS = -Wall -Wextra -std=c11 -O2 -g -D_XOPEN_SOURCE=700
 LDFLAGS = -lsqlite3 -ldl
 
 TARGET = mops
