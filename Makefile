@@ -13,7 +13,7 @@ PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man/man1
 
-.PHONY: all clean install directories dev deb
+.PHONY: all clean install uninstall directories dev deb
 
 all: directories $(TARGET)
 
@@ -37,6 +37,11 @@ install: all
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(MANDIR)
 	install -m 644 man/mops.1 $(DESTDIR)$(MANDIR)
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
+	rm -f $(DESTDIR)$(MANDIR)/mops.1
+
 
 deb: all
 	@echo "Building Debian package..."
