@@ -294,6 +294,8 @@ int cmd_worker_start(int argc, char **argv) {
     }
     
     printf("Starting mops worker daemon...\n");
+    /* Close DB connection opened by main() to prevent SQLite VFS corruption after fork/daemonize */
+    db_close();
     if (daemonize() != 0) {
         perror("Failed to daemonize");
         return 1;
