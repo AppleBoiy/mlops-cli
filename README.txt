@@ -1,52 +1,55 @@
-mops - The Multipurpose Operations CLI
+MOPS - The Multipurpose Operations CLI
 ======================================
 
-mops is a lightweight, dependency-free, high-performance C utility for MLOps engineers and DevOps professionals running on Linux. It provides instant, zero-latency feedback on system resources, container environments, and background task lifecycles, bridging the gap between low-level system metrics and high-level operational context.
+Mops is a lightweight, high-performance C utility designed for MLOps engineers and DevOps professionals. It provides a unified interface for system diagnostics, background task management, and cloud infrastructure operations, bridging the gap between raw system metrics and operational context.
 
-Build from Source
------------------
-You will need `gcc` (or `clang`), `make`, `libsqlite3-dev`, and `libncurses-dev`.
+CORE MODULES
+------------
+*  sys        : Deep system diagnostics (CPU, Memory, GPU/TPU utilization, OOM events).
+*  task       : SQLite-backed asynchronous task scheduling and management.
+*  worker     : Daemonized background processing for long-running batch jobs.
+*  gcp        : Google Cloud integration (Spot preemption watching, IAP tunneling).
+*  net        : Network observability (Port monitoring, active connections).
+*  dashboard  : Real-time ncurses terminal dashboard for fleet monitoring.
 
-    # Install dependencies (on Debian/Ubuntu)
+BUILDING FROM SOURCE
+--------------------
+Dependencies: gcc/clang, make, libsqlite3-dev, libncurses-dev.
+
+    # 1. Install dependencies (Debian/Ubuntu)
     sudo apt-get update && sudo apt-get install -y build-essential libsqlite3-dev libncurses-dev
 
-    # Build standard release
+    # 2. Build the binary
     make
 
-    # Build with developer tools (enables 'mops task' module)
-    make dev
+    # 3. Verify the environment
+    ./mops doctor
 
+INSTALLATION
+------------
+You can install mops system-wide via Makefile or by generating a Debian package.
 
-Installation (Debian/Ubuntu)
-----------------------------
-Generate a `.deb` package and install it system-wide.
+    # Option A: System Install
+    sudo make install
 
-    # 1. Create the package
+    # Option B: Debian Package
     make deb
+    sudo dpkg -i mops_*.deb
 
-    # 2. Install the package
-    sudo apt install ./mops_1.0.0_amd64.deb
+DEVELOPER WORKFLOW
+------------------
+The project maintains strict quality standards through automated tooling.
 
-    # 3. Use the CLI and its man page
-    mops --help
-    man mops
+    # Run functional tests (Python/pytest)
+    make test
 
-Testing
--------
-The test suite is written in Python using `pytest` to thoroughly validate the CLI and the background worker daemon.
+    # Run static analysis (cppcheck)
+    make lint
 
-    # 1. Install test dependencies (in a virtual environment)
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -e .
+    # Apply consistent styling (clang-format)
+    make format
 
-    # 2. Run the tests
-    make -j
-    pytest tests/
-
-
-Author
+AUTHOR
 ------
 Chaipat J.
 *   GitHub: AppleBoiy
-*   Email: contact@chaipat.cc
