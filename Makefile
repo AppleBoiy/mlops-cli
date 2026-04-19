@@ -47,7 +47,7 @@ deb: all
 	@echo "Priority: optional" >> deb-build/DEBIAN/control
 	@echo "Architecture: $$(dpkg --print-architecture 2>/dev/null || echo amd64)" >> deb-build/DEBIAN/control
 	@echo "Depends: libsqlite3-0" >> deb-build/DEBIAN/control
-	@echo "Maintainer: MLOps Engineer <admin@example.com>" >> deb-build/DEBIAN/control
+	@echo "Maintainer: Chaipat J. <contact.chaipat@gmail.com>" >> deb-build/DEBIAN/control
 	@echo "Description: Multipurpose Operations CLI for DevOps and MLOps" >> deb-build/DEBIAN/control
 	@echo " mops is a centralized utility for Linux system monitoring, hardware metrics," >> deb-build/DEBIAN/control
 	@echo " containerized environment tracking, and background task management." >> deb-build/DEBIAN/control

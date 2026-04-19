@@ -83,6 +83,21 @@ Sweep zombie processes and orphaned workers from the process tree. Use \-\-force
 .B kill \fI<id>\fR
 Send SIGTERM to a running task.
 
+.SS gcp \- Google Cloud Platform Utilities
+Provides fast, dependency-free interactions with the GCP Metadata Server and wrappers for complex gcloud commands.
+.TP
+.B whoami
+Instantly print the active Service Account email, Project ID, Zone, and attached Network Tags of the current VM using the local Metadata Server.
+.TP
+.B spot-watch \fB\-\-exec\fR \fI"<cmd>"\fR
+Poll the GCP preempted endpoint. If a shutdown signal is detected, instantly execute the provided command (e.g., to save checkpoints).
+.TP
+.B tunnel \fI<instance>\fR \fI<remote-port>\fR:\fI<local-port>\fR
+Establish an IAP tunnel to a private GCP instance, automatically constructing the underlying gcloud compute ssh command.
+.TP
+.B run-with-secrets \fI"<cmd>"\fR
+Dynamically fetch secrets from GCP Secret Manager and inject them as environment variables into the provided command without writing them to disk.
+
 .SH FILES
 .TP
 .B mops.db
@@ -109,6 +124,9 @@ Start a long-running batch job and tail its logs:
 .TP
 Clean up orphaned multiprocessing workers that failed to exit gracefully:
 .B mops task clean \-\-force
+.TP
+Forward local port 8080 to a remote TensorBoard instance over IAP:
+.B mops gcp tunnel worker-gpu-1 6006:8080
 
 .SH AUTHOR
-Created for MLOps and Infrastructure Engineers.
+Chaipat J. (GitHub: AppleBoiy, Email: contact.chaipat@gmail.com)

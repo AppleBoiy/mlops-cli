@@ -15,6 +15,7 @@ sqlite3 *db_get_connection(void);
 int cmd_disk(int argc, char **argv);
 int cmd_sys(int argc, char **argv);
 int cmd_net(int argc, char **argv);
+int cmd_gcp(int argc, char **argv);
 #ifdef DEV_MODE
 int cmd_task(int argc, char **argv);
 #endif
@@ -31,6 +32,14 @@ int cmd_sys_tpu(int argc, char **argv);
  */
 int cmd_net(int argc, char **argv);
 int cmd_net_port(int argc, char **argv);
+
+/*
+ * GCP Operations
+ */
+int cmd_gcp_whoami(int argc, char **argv);
+int cmd_gcp_spot_watch(int argc, char **argv);
+int cmd_gcp_tunnel(int argc, char **argv);
+int cmd_gcp_run_with_secrets(int argc, char **argv);
 
 #ifdef DEV_MODE
 /*
