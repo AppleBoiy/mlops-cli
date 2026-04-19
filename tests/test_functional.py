@@ -3,13 +3,14 @@ import pytest
 import sys
 
 # Helper function to run the CLI
-def run_mops(*args, timeout=2):
+def run_mops(*args, timeout=2, **kwargs):
     try:
         result = subprocess.run(
             ["./mops", *args],
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            **kwargs
         )
         return result
     except subprocess.TimeoutExpired as e:
@@ -117,5 +118,9 @@ class TestDashboard:
     def test_dashboard_blocks(self):
         # The dashboard launches ncurses and waits for 'q'.
         # We test that it launches successfully and blocks (times out).
-        res = run_mops("dashboard", timeout=1)
+        # We set TERM=xterm because CI environments often have TERM=unknown which crashes ncurses.
+        import os
+        env = os.environ.copy()
+        env["TERM"] = "xterm"
+        res = run_mops("dashboard", timeout=1, env=env)
         assert isinstance(res, subprocess.TimeoutExpired)
