@@ -19,10 +19,14 @@ int db_init(void) {
                       "pid INTEGER, "
                       "command TEXT NOT NULL, "
                       "status TEXT NOT NULL, "
+                      "notify_url TEXT, "
                       "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);";
 
     char *err_msg = NULL;
     rc = sqlite3_exec(db, sql, 0, 0, &err_msg);
+    if (rc == SQLITE_OK) {
+        sqlite3_exec(db, "ALTER TABLE tasks ADD COLUMN notify_url TEXT;", 0, 0, NULL);
+    }
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Failed to create table: %s\n", err_msg);
         sqlite3_free(err_msg);

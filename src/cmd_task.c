@@ -8,6 +8,8 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <sqlite3.h>
+#include <dirent.h>
+#include <ctype.h>
 #include "mops.h"
 
 #ifdef DEV_MODE
@@ -19,22 +21,26 @@ extern sqlite3* db_get_connection(void);
  * Database Helpers
  */
 
-static void insert_task(int pid, const char *cmd, const char *status) {
+static int insert_task(int pid, const char *cmd, const char *status) {
     sqlite3 *db = db_get_connection();
-    if (!db) return;
+    if (!db) return -1;
 
     sqlite3_stmt *stmt;
+    int id = -1;
     const char *sql = "INSERT INTO tasks (pid, command, status) VALUES (?, ?, ?)";
     
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, pid);
         sqlite3_bind_text(stmt, 2, cmd, -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, status, -1, SQLITE_TRANSIENT);
-        sqlite3_step(stmt);
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            id = (int)sqlite3_last_insert_rowid(db);
+        }
         sqlite3_finalize(stmt);
     } else {
         fprintf(stderr, "Failed to prepare DB statement: %s\n", sqlite3_errmsg(db));
     }
+    return id;
 }
 
 static void update_task_status(int id, const char *status) {
@@ -52,35 +58,97 @@ static void update_task_status(int id, const char *status) {
     }
 }
 
+static void update_task_pid(int id, int pid) {
+    sqlite3 *db = db_get_connection();
+    if (!db) return;
+
+    sqlite3_stmt *stmt;
+    const char *sql = "UPDATE tasks SET pid = ? WHERE id = ?";
+    
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, pid);
+        sqlite3_bind_int(stmt, 2, id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
+/*
+ * Webhook Notification Helper
+ */
+
+static void notify_webhook(const char *url, int task_id, int exit_code) {
+    char curl_cmd[1024];
+    snprintf(curl_cmd, sizeof(curl_cmd), 
+             "curl -s -X POST -H 'Content-Type: application/json' "
+             "-d '{\"task_id\":%d, \"exit_code\":%d}' %s > /dev/null", 
+             task_id, exit_code, url);
+    system(curl_cmd);
+}
+
 /*
  * Subcommand Implementations
  */
 
 int cmd_task_exec(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: mops task exec \"<command>\"\n");
+        fprintf(stderr, "Usage: mops task exec \"<command>\" [--notify <url>]\n");
         return 1;
     }
     
     const char *cmd = argv[1];
-    printf("Executing synchronously: %s\n", cmd);
+    const char *notify_url = NULL;
     
-    int ret = system(cmd);
-    if (ret == -1) {
-        perror("system");
-        return 1;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--notify") == 0 && i + 1 < argc) {
+            notify_url = argv[i+1];
+            break;
+        }
     }
     
-    return WEXITSTATUS(ret);
+    int task_id = insert_task(getpid(), cmd, "RUNNING");
+    
+    printf("Executing synchronously (Task ID %d): %s\n", task_id, cmd);
+    int ret = system(cmd);
+    int exit_code = 1;
+    
+    if (ret != -1) {
+        exit_code = WEXITSTATUS(ret);
+    } else {
+        perror("system");
+    }
+    
+    update_task_status(task_id, exit_code == 0 ? "FINISHED" : "FAILED");
+    
+    if (notify_url) {
+        notify_webhook(notify_url, task_id, exit_code);
+    }
+    
+    return exit_code;
 }
 
 int cmd_task_bg(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: mops task bg \"<command>\"\n");
+        fprintf(stderr, "Usage: mops task bg \"<command>\" [--notify <url>]\n");
         return 1;
     }
     
     const char *cmd = argv[1];
+    const char *notify_url = NULL;
+    
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--notify") == 0 && i + 1 < argc) {
+            notify_url = argv[i+1];
+            break;
+        }
+    }
+    
+    int task_id = insert_task(0, cmd, "STARTING");
+    if (task_id < 0) {
+        fprintf(stderr, "Failed to register background task in database.\n");
+        return 1;
+    }
+    
     pid_t pid = fork();
     
     if (pid < 0) {
@@ -90,8 +158,9 @@ int cmd_task_bg(int argc, char **argv) {
     
     if (pid > 0) {
         /* Parent process */
-        insert_task(pid, cmd, "RUNNING");
-        printf("Started background task (PID %d): %s\n", pid, cmd);
+        update_task_pid(task_id, pid);
+        update_task_status(task_id, "RUNNING");
+        printf("Started background task (Task ID %d, PID %d): %s\n", task_id, pid, cmd);
         return 0;
     } else {
         /* Child process */
@@ -104,10 +173,13 @@ int cmd_task_bg(int argc, char **argv) {
         }
         
         /*
-         * 2. Redirect standard I/O
+         * 2. Redirect standard I/O to task-specific log files
          */
+        char log_path[256];
+        snprintf(log_path, sizeof(log_path), "/tmp/mops_task_%d.log", task_id);
+        
         int fd_in = open("/dev/null", O_RDONLY);
-        int fd_out = open("/tmp/mops_bg.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        int fd_out = open(log_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
         
         if (fd_in >= 0) {
             dup2(fd_in, STDIN_FILENO);
@@ -122,12 +194,25 @@ int cmd_task_bg(int argc, char **argv) {
         /*
          * 3. Execute the command via shell
          */
-        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        int ret = system(cmd);
+        int exit_code = 1;
+        if (ret != -1 && WIFEXITED(ret)) {
+            exit_code = WEXITSTATUS(ret);
+        }
         
         /*
-         * 4. Exit if execl fails
+         * 4. Update status dynamically from the background process
          */
-        exit(EXIT_FAILURE);
+        update_task_status(task_id, exit_code == 0 ? "FINISHED" : "FAILED");
+        
+        /*
+         * 5. Trigger webhook if requested
+         */
+        if (notify_url) {
+            notify_webhook(notify_url, task_id, exit_code);
+        }
+        
+        exit(exit_code);
     }
 }
 
@@ -213,7 +298,7 @@ int cmd_task_list(int argc, char **argv) {
         /*
          * Check if a running task is actually still alive.
          */
-        if (strcmp(current_status, "RUNNING") == 0) {
+        if (strcmp(current_status, "RUNNING") == 0 && pid > 0) {
             if (kill(pid, 0) != 0) {
                 /*
                  * Process doesn't exist or we have no permission;
@@ -278,18 +363,124 @@ int cmd_task_kill(int argc, char **argv) {
     return 0;
 }
 
+int cmd_task_logs(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: mops task logs <task_id> [--tail]\n");
+        return 1;
+    }
+    
+    int task_id = atoi(argv[1]);
+    int tail = 0;
+    
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--tail") == 0) tail = 1;
+    }
+    
+    char log_path[256];
+    snprintf(log_path, sizeof(log_path), "/tmp/mops_task_%d.log", task_id);
+    
+    if (access(log_path, F_OK) != 0) {
+        fprintf(stderr, "Log file not found for Task %d: %s\n", task_id, log_path);
+        return 1;
+    }
+    
+    if (tail) {
+        execlp("tail", "tail", "-f", log_path, NULL);
+    } else {
+        execlp("cat", "cat", log_path, NULL);
+    }
+    
+    perror("execlp");
+    return 1;
+}
+
+int cmd_task_clean(int argc, char **argv) {
+    int force = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--force") == 0) force = 1;
+    }
+    
+    DIR *dir = opendir("/proc");
+    if (!dir) {
+        perror("opendir /proc");
+        return 1;
+    }
+    
+    struct dirent *ent;
+    int found = 0;
+    
+    printf("Scanning for zombie processes and orphaned workers...\n");
+    
+    while ((ent = readdir(dir)) != NULL) {
+        if (!isdigit((unsigned char)ent->d_name[0])) continue;
+        
+        char path[256];
+        snprintf(path, sizeof(path), "/proc/%s/stat", ent->d_name);
+        
+        FILE *fp = fopen(path, "r");
+        if (!fp) continue;
+        
+        int pid, ppid;
+        char comm[256];
+        char state;
+        
+        /* 
+         * Parse /proc/[pid]/stat
+         * Format: pid (comm) state ppid ...
+         */
+        if (fscanf(fp, "%d (%255[^)]) %c %d", &pid, comm, &state, &ppid) == 4) {
+            if (state == 'Z') {
+                printf("- Zombie process found: PID %d (%s) PPID %d\n", pid, comm, ppid);
+                found++;
+            } else if (ppid == 1 && (strstr(comm, "python") != NULL || strstr(comm, "worker") != NULL)) {
+                printf("- Orphaned worker found: PID %d (%s)\n", pid, comm);
+                found++;
+                if (force) {
+                    printf("  -> Sending SIGKILL to PID %d\n", pid);
+                    kill(pid, SIGKILL);
+                }
+            }
+        }
+        fclose(fp);
+    }
+    closedir(dir);
+    
+    if (!found) {
+        printf("System is clean. No zombies or orphaned workers found.\n");
+    } else if (!force) {
+        printf("\nRun 'mops task clean --force' to aggressively terminate orphaned workers.\n");
+    }
+    
+    return 0;
+}
+
 /*
  * Main Dispatcher
  */
 
 int cmd_task(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: mops task <exec|bg|queue|list|kill> [args...]\n");
+        fprintf(stderr, "Usage: mops task <exec|bg|queue|list|logs|clean|kill> [args...]\n");
         return 1;
     }
 
     const char *subcmd = argv[1];
     
+    if (strcmp(subcmd, "-h") == 0 || strcmp(subcmd, "--help") == 0) {
+        printf("Task Management Operations:\n\n");
+        printf("Usage: mops task <command> [args...]\n\n");
+        printf("Commands:\n");
+        printf("  exec \"<cmd>\" [--notify <url>]   Execute a command synchronously\n");
+        printf("  bg \"<cmd>\" [--notify <url>]     Start a background task and track it\n");
+        printf("  queue \"<cmd>\"                   Add a command to the task queue\n");
+        printf("  queue --exec                    Execute all queued tasks sequentially\n");
+        printf("  list                            List all tracked tasks and their status\n");
+        printf("  logs <id> [--tail]              Read or tail stdout/stderr for a task\n");
+        printf("  clean [--force]                 Sweep zombie processes and orphaned workers\n");
+        printf("  kill <id>                       Send SIGTERM to a running task\n");
+        return 0;
+    }
+
     if (strcmp(subcmd, "exec") == 0) {
         return cmd_task_exec(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "bg") == 0) {
@@ -300,9 +491,13 @@ int cmd_task(int argc, char **argv) {
         return cmd_task_list(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "kill") == 0) {
         return cmd_task_kill(argc - 1, argv + 1);
+    } else if (strcmp(subcmd, "logs") == 0) {
+        return cmd_task_logs(argc - 1, argv + 1);
+    } else if (strcmp(subcmd, "clean") == 0) {
+        return cmd_task_clean(argc - 1, argv + 1);
     } else {
         fprintf(stderr, "Unknown task subcommand: %s\n", subcmd);
-        fprintf(stderr, "Usage: mops task <exec|bg|queue|list|kill> [args...]\n");
+        fprintf(stderr, "Usage: mops task <exec|bg|queue|list|logs|clean|kill> [args...]\n");
         return 1;
     }
 }

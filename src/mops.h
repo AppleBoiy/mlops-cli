@@ -14,6 +14,7 @@ sqlite3 *db_get_connection(void);
  */
 int cmd_disk(int argc, char **argv);
 int cmd_sys(int argc, char **argv);
+int cmd_net(int argc, char **argv);
 #ifdef DEV_MODE
 int cmd_task(int argc, char **argv);
 #endif
@@ -24,6 +25,12 @@ int cmd_task(int argc, char **argv);
 int cmd_sys_cpu(int argc, char **argv);
 int cmd_sys_gpu(int argc, char **argv);
 int cmd_sys_tpu(int argc, char **argv);
+
+/*
+ * Net Operations
+ */
+int cmd_net(int argc, char **argv);
+int cmd_net_port(int argc, char **argv);
 
 #ifdef DEV_MODE
 /*

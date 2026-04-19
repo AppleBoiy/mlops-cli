@@ -105,9 +105,50 @@ int cmd_sys_cpu(int argc, char **argv) {
 int cmd_sys_gpu(int argc, char **argv) {
     int human_readable = 0;
     int long_format = 0;
+    int pids = 0;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0) human_readable = 1;
         if (strcmp(argv[i], "-l") == 0) long_format = 1;
+        if (strcmp(argv[i], "--pids") == 0) pids = 1;
+    }
+
+    if (pids) {
+        const char *cmd = "nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader 2>/dev/null";
+        FILE *fp = popen(cmd, "r");
+        if (!fp) {
+            fprintf(stderr, "Error: Failed to execute nvidia-smi.\n");
+            return 1;
+        }
+
+        char line[256];
+        if (human_readable) {
+            printf("GPU Compute Processes:\n");
+            printf("%-10s | %-20s | %s\n", "PID", "VRAM Used", "Process Name");
+            printf("------------------------------------------------------------\n");
+        }
+
+        int found = 0;
+        while (fgets(line, sizeof(line), fp)) {
+            found = 1;
+            line[strcspn(line, "\n")] = 0;
+            char *pid = strtok(line, ",");
+            char *mem = strtok(NULL, ",");
+            char *name = strtok(NULL, ",");
+            
+            if (pid && mem && name) {
+                if (human_readable) {
+                    printf("%-10s | %-20s | %s\n", pid, mem, name);
+                } else {
+                    printf("%s,%s,%s\n", pid, mem, name);
+                }
+            }
+        }
+        pclose(fp);
+
+        if (!found && human_readable) {
+            printf("No active compute processes found on GPU.\n");
+        }
+        return 0;
     }
     
     /*
@@ -249,16 +290,124 @@ int cmd_sys_tpu(int argc, char **argv) {
 }
 
 /*
+ * System Metrics - OOM
+ */
+
+int cmd_sys_oom(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    
+    FILE *fp = popen("dmesg | grep -i 'killed process' 2>/dev/null", "r");
+    if (!fp) {
+        fprintf(stderr, "Error: Could not read dmesg. Make sure you have privileges.\n");
+        return 1;
+    }
+    
+    char line[512];
+    int found = 0;
+    
+    printf("OOM Killed Processes:\n");
+    printf("----------------------------------------------------\n");
+    
+    while (fgets(line, sizeof(line), fp)) {
+        found = 1;
+        printf("%s", line);
+    }
+    
+    pclose(fp);
+    
+    if (!found) {
+        printf("No OOM kills found in the current dmesg ring buffer.\n");
+    }
+    
+    return 0;
+}
+
+/*
+ * System Metrics - CGroup Usage
+ */
+
+int cmd_sys_cgroup(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    
+    FILE *fp;
+    unsigned long long mem_usage = 0, mem_limit = 0;
+    int found_mem = 0;
+    
+    /* Try cgroup v2 first */
+    fp = fopen("/sys/fs/cgroup/memory.current", "r");
+    if (fp) {
+        if (fscanf(fp, "%llu", &mem_usage) == 1) found_mem = 1;
+        fclose(fp);
+        
+        fp = fopen("/sys/fs/cgroup/memory.max", "r");
+        if (fp) {
+            char buf[64];
+            if (fgets(buf, sizeof(buf), fp)) {
+                if (strncmp(buf, "max", 3) != 0) {
+                    mem_limit = strtoull(buf, NULL, 10);
+                }
+            }
+            fclose(fp);
+        }
+    } else {
+        /* Try cgroup v1 fallback */
+        fp = fopen("/sys/fs/cgroup/memory/memory.usage_in_bytes", "r");
+        if (fp) {
+            if (fscanf(fp, "%llu", &mem_usage) == 1) found_mem = 1;
+            fclose(fp);
+            
+            fp = fopen("/sys/fs/cgroup/memory/memory.limit_in_bytes", "r");
+            if (fp) {
+                if (fscanf(fp, "%llu", &mem_limit) != 1) mem_limit = 0;
+                fclose(fp);
+            }
+        }
+    }
+
+    if (!found_mem) {
+        fprintf(stderr, "Error: Could not find cgroup memory metrics.\n");
+        return 1;
+    }
+
+    printf("Container / Cgroup Resources:\n");
+    printf("----------------------------------------------------\n");
+    printf("Memory Usage: %.2f MB\n", (double)mem_usage / (1024 * 1024));
+    
+    /* Display limits carefully to ignore max defaults (e.g. 9223372036854771712) */
+    if (mem_limit > 0 && mem_limit < 9000000000000000000ULL) {
+        printf("Memory Limit: %.2f MB\n", (double)mem_limit / (1024 * 1024));
+    } else {
+        printf("Memory Limit: Unlimited\n");
+    }
+    
+    return 0;
+}
+
+
+/*
  * Main Dispatcher
  */
 
 int cmd_sys(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: mops sys <cpu|gpu|tpu>\n");
+        fprintf(stderr, "Usage: mops sys <cpu|gpu|tpu|oom|cgroup> [--help]\n");
         return 1;
     }
 
     const char *subcmd = argv[1];
+
+    if (strcmp(subcmd, "--help") == 0 || strcmp(subcmd, "-h") == 0) {
+        printf("Usage: mops sys <command> [options]\n\n");
+        printf("Commands:\n");
+        printf("  cpu       Show CPU utilization (-h for human readable, -l for long format)\n");
+        printf("  gpu       Show GPU utilization (-h for human readable, -l for long format, --pids for processes)\n");
+        printf("  tpu       Show TPU availability (-h for human readable, -l for long format)\n");
+        printf("  oom       List Out-Of-Memory killed processes from dmesg\n");
+        printf("  cgroup    Show Cgroup / Docker container resource limits and usage\n");
+        return 0;
+    }
 
     if (strcmp(subcmd, "cpu") == 0) {
         return cmd_sys_cpu(argc - 1, argv + 1);
@@ -266,9 +415,13 @@ int cmd_sys(int argc, char **argv) {
         return cmd_sys_gpu(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "tpu") == 0) {
         return cmd_sys_tpu(argc - 1, argv + 1);
+    } else if (strcmp(subcmd, "oom") == 0) {
+        return cmd_sys_oom(argc - 1, argv + 1);
+    } else if (strcmp(subcmd, "cgroup") == 0) {
+        return cmd_sys_cgroup(argc - 1, argv + 1);
     } else {
         fprintf(stderr, "Unknown sys command: %s\n", subcmd);
-        fprintf(stderr, "Available commands: cpu, gpu, tpu\n");
+        fprintf(stderr, "Available commands: cpu, gpu, tpu, oom, cgroup\n");
         return 1;
     }
 }
