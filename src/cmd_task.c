@@ -354,6 +354,9 @@ int cmd_task_kill(int argc, char **argv) {
             } else {
                 perror("Failed to send SIGTERM");
             }
+        } else if (strcmp((const char *)status, "QUEUED") == 0) {
+            update_task_status(task_id, "CANCELLED");
+            printf("Cancelled queued task %d\n", task_id);
         } else {
             printf("Task %d is not RUNNING (Current status: %s)\n", task_id, status);
         }

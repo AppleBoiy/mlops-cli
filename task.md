@@ -60,6 +60,7 @@ A job submitted to `mops` goes through a simple state machine:
 3.  **FINISHED**: The job completed successfully (exit code 0).
 4.  **FAILED**: The job terminated with a non-zero exit code.
 5.  **KILLED**: The job was manually stopped with `mops task kill`.
+6.  **CANCELLED**: The job was cancelled while still in the queue (before it started).
 
 ### Commands & Aliases
 
@@ -97,11 +98,16 @@ ID    | PID        | STATUS     | COMMAND
 
 #### `kill` / `qdel`
 
-Stops a running job.
+Stops a running job. If the job is still in the QUEUED state, it will be cancelled (status set to CANCELLED) without sending a signal.
 
 ```bash
 $ mops task kill 1
 Sent SIGTERM to task 1 (PID 23456)
+```
+
+```bash
+$ mops task kill 2
+Cancelled queued task 2
 ```
 
 #### `logs`
