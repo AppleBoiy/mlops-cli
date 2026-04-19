@@ -21,8 +21,13 @@ static int do_disk_status(int human, int long_fmt) {
         }
         printf("-----------------------------------------------------------------------------\n");
     } else {
-        printf("%-15s %-15s %-15s\n", "DEVICE", "READS", "WRITES");
-        printf("-----------------------------------------------\n");
+        if (human) {
+            printf("%-15s %-15s %-15s\n", "DEVICE", "READ (MB)", "WRITTEN (MB)");
+            printf("-----------------------------------------------\n");
+        } else {
+            printf("%-15s %-15s %-15s\n", "DEVICE", "READS", "WRITES");
+            printf("-----------------------------------------------\n");
+        }
     }
     
     while (fgets(line, sizeof(line), fp)) {
@@ -57,7 +62,13 @@ static int do_disk_status(int human, int long_fmt) {
                     printf("%-15s %-15lu %-15lu %-15lu %-15lu\n", dev, reads, writes, sectors_read, sectors_write);
                 }
             } else {
-                printf("%-15s %-15lu %-15lu\n", dev, reads, writes);
+                if (human) {
+                    printf("%-15s %-15.2f %-15.2f\n", dev, 
+                           (double)sectors_read * 512.0 / 1048576.0,
+                           (double)sectors_write * 512.0 / 1048576.0);
+                } else {
+                    printf("%-15s %-15lu %-15lu\n", dev, reads, writes);
+                }
             }
         }
     }
