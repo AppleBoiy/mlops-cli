@@ -115,7 +115,9 @@ static int daemonize() {
     if (pid > 0) exit(EXIT_SUCCESS);
 
     umask(0);
-    chdir("/");
+    if (chdir("/") != 0) {
+        return -1;
+    }
 
     for (int x = sysconf(_SC_OPEN_MAX); x >= 0; x--) {
         close(x);
