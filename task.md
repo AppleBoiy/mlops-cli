@@ -165,6 +165,16 @@ mops task clean --force
     mops worker stop
     ```
 
+## 3. Real-Time Monitoring (`mops dashboard`)
+
+To visually track the progress of your task queue alongside the health of your server (Memory/CPU utilization), you can launch the interactive Ncurses dashboard:
+
+```bash
+mops dashboard
+```
+
+This provides a live-updating terminal UI showing the most recently submitted tasks and system resource bars. Press `q` to exit.
+
 ## System Files
 
 The `mops` scheduler uses the following files:
@@ -191,8 +201,8 @@ Setup:
 python3 -m venv .venv
 . .venv/bin/activate
 
-# Install test dependencies
-pip install pytest
+# Install test dependencies (this utilizes setup.py)
+pip install -e .
 ```
 
 Build the binary:

@@ -40,3 +40,12 @@ deb-build/
 *.swo
 *~
 *.tmp
+
+# Python / Test files
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Make dependency tracking
+*.d
