@@ -11,6 +11,7 @@
 #include <dirent.h>
 #include <ctype.h>
 #include <errno.h>
+#include <time.h>
 #include "mops.h"
 
 /*
@@ -318,7 +319,7 @@ int cmd_task_submit(int argc, char **argv) {
 
 
 int cmd_task_list(int argc, char **argv) {
-    int json = 0;
+    int json = 0; const char *order_by = "id"; int desc = 0; int limit = 0; int offset = 0;
     const char *status_filter = NULL;
     const char *since_filter = NULL;
     const char *until_filter = NULL;
@@ -331,6 +332,14 @@ int cmd_task_list(int argc, char **argv) {
             since_filter = argv[++i];
         } else if (strcmp(argv[i], "--until") == 0 && i + 1 < argc) {
             until_filter = argv[++i];
+        } else if (strcmp(argv[i], "--order-by") == 0 && i + 1 < argc) {
+            order_by = argv[++i];
+        } else if (strcmp(argv[i], "--desc") == 0) {
+            desc = 1;
+        } else if (strcmp(argv[i], "--limit") == 0 && i + 1 < argc) {
+            limit = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--offset") == 0 && i + 1 < argc) {
+            offset = atoi(argv[++i]);
         }
     }
 
@@ -363,16 +372,36 @@ int cmd_task_list(int argc, char **argv) {
                  "%s%s <= ?", need_where ? " AND " : "", tcol);
         need_where = 1;
     }
+    /* map order_by to a safe column */
+    const char *obcol = "id";
+    if (order_by) {
+        if (strcmp(order_by, "id") == 0) obcol = "id";
+        else if (strcmp(order_by, "pid") == 0) obcol = "pid";
+        else if (strcmp(order_by, "status") == 0) obcol = "status";
+        else if (strcmp(order_by, "exit_code") == 0) obcol = "exit_code";
+        else if (strcmp(order_by, "started_at") == 0) obcol = "started_at";
+        else if (strcmp(order_by, "finished_at") == 0) obcol = "finished_at";
+    }
+    char tail[256]; tail[0] = '\0';
+    snprintf(tail, sizeof(tail), " ORDER BY %s %s", obcol, desc ? "DESC" : "ASC");
+    if (limit > 0) {
+        size_t l = strlen(tail);
+        snprintf(tail + l, sizeof(tail) - l, " LIMIT %d", limit);
+    }
+    if (offset > 0) {
+        size_t l = strlen(tail);
+        snprintf(tail + l, sizeof(tail) - l, " OFFSET %d", offset);
+    }
     if (need_where) {
         snprintf(sql, sizeof(sql),
                  "SELECT id, pid, command, status, exit_code, started_at, finished_at, "
                  "CAST((strftime('%%s', finished_at) - strftime('%%s', started_at)) AS INTEGER) AS duration_sec "
-                 "FROM tasks WHERE %s", where);
+                 "FROM tasks WHERE %s%s", where, tail);
     } else {
         snprintf(sql, sizeof(sql),
                  "SELECT id, pid, command, status, exit_code, started_at, finished_at, "
                  "CAST((strftime('%%s', finished_at) - strftime('%%s', started_at)) AS INTEGER) AS duration_sec "
-                 "FROM tasks");
+                 "FROM tasks%s", tail);
     }
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -583,7 +612,122 @@ int cmd_task_rm(int argc, char **argv) {
     printf("Removed task %d%s\n", task_id, remove_log ? " (and log)" : "");
     return 0;
 }
-
+ 
+int cmd_task_purge(int argc, char **argv) {
+    const char *status_filter = NULL;
+    const char *older_than = NULL;
+    int remove_log = 0;
+    int force = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--status") == 0 && i + 1 < argc) {
+            status_filter = argv[++i];
+        } else if (strcmp(argv[i], "--older-than") == 0 && i + 1 < argc) {
+            older_than = argv[++i];
+        } else if (strcmp(argv[i], "--log") == 0) {
+            remove_log = 1;
+        } else if (strcmp(argv[i], "--force") == 0) {
+            force = 1;
+        }
+    }
+    if (!older_than) {
+        fprintf(stderr, "Usage: mops task purge --older-than <Ns|Nm|Nh|Nd> [--status <STATUS>] [--log] [--force]\n");
+        return 1;
+    }
+    /* parse duration */
+    long mult = 1;
+    size_t len = strlen(older_than);
+    if (len == 0) return 1;
+    char unit = older_than[len - 1];
+    long val = 0;
+    if (unit == 's' || unit == 'm' || unit == 'h' || unit == 'd') {
+        char buf[32]; size_t cpy = len - 1; if (cpy >= sizeof(buf)) cpy = sizeof(buf) - 1;
+        memcpy(buf, older_than, cpy); buf[cpy] = '\0';
+        val = atol(buf);
+        if (unit == 'm') mult = 60;
+        else if (unit == 'h') mult = 3600;
+        else if (unit == 'd') mult = 86400;
+    } else {
+        val = atol(older_than);
+    }
+    if (val <= 0) {
+        fprintf(stderr, "Invalid --older-than value: %s\n", older_than);
+        return 1;
+    }
+    time_t now = time(NULL);
+    time_t cutoff = now - (val * mult);
+    char cutoff_str[32];
+    struct tm tmv;
+#if defined(_WIN32)
+    tmv = *localtime(&cutoff);
+#else
+    localtime_r(&cutoff, &tmv);
+#endif
+    strftime(cutoff_str, sizeof(cutoff_str), "%Y-%m-%d %H:%M:%S", &tmv);
+ 
+    sqlite3 *db = db_get_connection();
+    if (!db) return 1;
+ 
+    const char *tcol = "COALESCE(finished_at, started_at, timestamp)";
+    char where[512]; where[0] = '\0';
+    int need_where = 0;
+    if (status_filter) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 "%sstatus = ?", need_where ? " AND " : "");
+        need_where = 1;
+    }
+    snprintf(where + strlen(where), sizeof(where) - strlen(where),
+             "%s%s <= ?", need_where ? " AND " : "", tcol);
+    need_where = 1;
+    if (!force) {
+        snprintf(where + strlen(where), sizeof(where) - strlen(where),
+                 " AND status != 'RUNNING'");
+    }
+ 
+    char sql[1024];
+    if (need_where) {
+        snprintf(sql, sizeof(sql), "SELECT id, pid, status FROM tasks WHERE %s", where);
+    } else {
+        snprintf(sql, sizeof(sql), "SELECT id, pid, status FROM tasks");
+    }
+ 
+    sqlite3_stmt *stmt;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare query.\n");
+        return 1;
+    }
+    int bind_idx = 1;
+    if (status_filter) {
+        sqlite3_bind_text(stmt, bind_idx++, status_filter, -1, SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_text(stmt, bind_idx++, cutoff_str, -1, SQLITE_TRANSIENT);
+ 
+    int removed = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int id = sqlite3_column_int(stmt, 0);
+        int pid = sqlite3_column_int(stmt, 1);
+        const unsigned char *status = sqlite3_column_text(stmt, 2);
+        if (status && strcmp((const char *)status, "RUNNING") == 0 && force && pid > 0) {
+            kill(-pid, SIGTERM);
+        }
+        if (remove_log) {
+            char log_path[256];
+            snprintf(log_path, sizeof(log_path), "/tmp/mops_task_%d.log", id);
+            remove(log_path);
+        }
+        sqlite3_stmt *del;
+        if (sqlite3_prepare_v2(db, "DELETE FROM tasks WHERE id = ?", -1, &del, NULL) == SQLITE_OK) {
+            sqlite3_bind_int(del, 1, id);
+            sqlite3_step(del);
+            sqlite3_finalize(del);
+            removed++;
+        }
+    }
+    sqlite3_finalize(stmt);
+ 
+    printf("Purged %d task(s)%s\n", removed, remove_log ? " (and logs)" : "");
+    return 0;
+}
+ 
 int cmd_task_logs(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task logs <task_id> [--tail]\n");
@@ -729,6 +873,7 @@ int cmd_task(int argc, char **argv) {
         printf("  list (qstat)           List all tracked tasks and their status\n");
         printf("  kill (qdel)            Send SIGTERM to a running task\n");
         printf("  rm                     Remove a task record (optionally its log)\n");
+        printf("  purge                  Bulk-delete tasks by status and age\n");
         printf("  exec                   Execute a command synchronously\n");
         printf("  bg                     Start a background task and track it\n");
         printf("  logs                   Read or tail stdout/stderr for a task\n");
@@ -736,12 +881,17 @@ int cmd_task(int argc, char **argv) {
         printf("Options:\n");
         printf("  --notify <url>         Send a webhook upon task completion ('exec', 'bg')\n");
         printf("  --tail                 Tail log output ('logs')\n");
-        printf("  --force                Aggressively kill orphaned workers ('clean'), or force 'rm' of RUNNING tasks\n");
+        printf("  --force                Aggressively kill orphaned workers ('clean'), force 'rm' of RUNNING tasks, or include RUNNING in 'purge'\n");
         printf("  --json                 Output in JSON format ('list', 'clean')\n");
-        printf("  --status <STATUS>      Filter 'list' by status (e.g., QUEUED,RUNNING,FINISHED,FAILED,KILLED,CANCELLED)\n");
+        printf("  --status <STATUS>      Filter 'list'/'purge' by status (e.g., QUEUED,RUNNING,FINISHED,FAILED,KILLED,CANCELLED)\n");
         printf("  --since <TIME>         Filter 'list' by start time (inclusive). Format: 'YYYY-MM-DD HH:MM:SS'\n");
         printf("  --until <TIME>         Filter 'list' by end time (inclusive). Format: 'YYYY-MM-DD HH:MM:SS'\n");
-        printf("  --log                  With 'rm', also delete the task log file\n");
+        printf("  --order-by <FIELD>     Order 'list' by one of: id,pid,status,exit_code,started_at,finished_at\n");
+        printf("  --desc                 Use descending order for 'list'\n");
+        printf("  --limit <N>            Limit number of rows returned by 'list'\n");
+        printf("  --offset <N>           Offset for 'list' pagination\n");
+        printf("  --older-than <AGE>     With 'purge', delete tasks older than AGE (e.g., 3600s, 60m, 24h, 7d)\n");
+        printf("  --log                  With 'rm'/'purge', also delete task log file(s)\n");
         return 0;
     }
 
@@ -759,6 +909,8 @@ int cmd_task(int argc, char **argv) {
         return cmd_task_logs(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "clean") == 0) {
         return cmd_task_clean(argc - 1, argv + 1);
+    } else if (strcmp(subcmd, "purge") == 0) {
+        return cmd_task_purge(argc - 1, argv + 1);
     } else if (strcmp(subcmd, "rm") == 0) {
         return cmd_task_rm(argc - 1, argv + 1);
     } else {
