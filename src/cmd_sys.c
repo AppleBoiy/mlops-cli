@@ -96,6 +96,7 @@ static int cmd_sys_cpu(int argc, char **argv) {
     unsigned long long total2 = get_total_time(&stat2);
 
     double usage = 0.0;
+    unsigned long long total_diff = total2 - total1;
     if (total_diff > 0) {
         unsigned long long idle_diff = idle2 - idle1;
         usage = (double)(total_diff - idle_diff) / total_diff * 100.0;

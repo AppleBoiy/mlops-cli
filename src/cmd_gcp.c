@@ -101,7 +101,7 @@ static int cmd_gcp_whoami(int argc, char **argv) {
     fetch_gcp_metadata("instance/zone", zone_full, sizeof(zone_full));
     
     /* Zone returns as 'projects/12345/zones/us-central1-a', so we extract the suffix */
-    char *zone = strrchr(zone_full, '/');
+    const char *zone = strrchr(zone_full, '/');
     if (zone) zone++; else zone = zone_full;
     
     char tags[1024] = {0};
