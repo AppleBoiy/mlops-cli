@@ -16,7 +16,7 @@ extern int cmd_doctor(int argc, char **argv);
 extern int cmd_completion(int argc, char **argv);
 extern int db_init(void);
 
-void print_usage(const char *prog_name) {
+static void print_usage(const char *prog_name) {
     printf("mops - Multipurpose Operations CLI & Batch System\n\n");
     printf("Usage: %s <command> [options]\n\n", prog_name);
     printf("Commands:\n");
@@ -38,7 +38,7 @@ void print_usage(const char *prog_name) {
     printf("\nRun '%s <command> --help' for more information on a command.\n", prog_name);
 }
 
-void print_author(void) {
+static void print_author(void) {
     printf("Personal Details\n");
     printf("----------------\n");
     printf("Name:   Chaipat J.\n");

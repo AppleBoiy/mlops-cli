@@ -130,7 +130,7 @@ static void notify_webhook(const char *url, int task_id, int exit_code) {
  * Subcommand Implementations
  */
 
-int cmd_task_exec(int argc, char **argv) {
+static int cmd_task_exec(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task exec \"<command>\" [--notify <url>]\n");
         return 1;
@@ -192,7 +192,7 @@ int cmd_task_exec(int argc, char **argv) {
     return exit_code;
 }
 
-int cmd_task_bg(int argc, char **argv) {
+static int cmd_task_bg(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task bg \"<command>\" [--notify <url>]\n");
         return 1;
@@ -300,7 +300,7 @@ int cmd_task_bg(int argc, char **argv) {
     }
 }
 
-int cmd_task_submit(int argc, char **argv) {
+static int cmd_task_submit(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task submit \"<command>\"\n");
         return 1;
@@ -318,7 +318,7 @@ int cmd_task_submit(int argc, char **argv) {
 }
 
 
-int cmd_task_list(int argc, char **argv) {
+static int cmd_task_list(int argc, char **argv) {
     int json = 0; const char *order_by = "id"; int desc = 0; int limit = 0; int offset = 0;
     const char *status_filter = NULL;
     const char *since_filter = NULL;
@@ -488,7 +488,7 @@ int cmd_task_list(int argc, char **argv) {
 }
 
 
-int cmd_task_kill(int argc, char **argv) {
+static int cmd_task_kill(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task kill <task_id>\n");
         return 1;
@@ -539,7 +539,7 @@ int cmd_task_kill(int argc, char **argv) {
 }
 
 
-int cmd_task_rm(int argc, char **argv) {
+static int cmd_task_rm(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task rm <task_id> [--log] [--force]\n");
         return 1;
@@ -613,7 +613,7 @@ int cmd_task_rm(int argc, char **argv) {
     return 0;
 }
  
-int cmd_task_purge(int argc, char **argv) {
+static int cmd_task_purge(int argc, char **argv) {
     const char *status_filter = NULL;
     const char *older_than = NULL;
     int remove_log = 0;
@@ -728,7 +728,7 @@ int cmd_task_purge(int argc, char **argv) {
     return 0;
 }
  
-int cmd_task_logs(int argc, char **argv) {
+static int cmd_task_logs(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: mops task logs <task_id> [--tail]\n");
         return 1;
@@ -759,7 +759,7 @@ int cmd_task_logs(int argc, char **argv) {
     return 1;
 }
 
-int cmd_task_clean(int argc, char **argv) {
+static int cmd_task_clean(int argc, char **argv) {
     int force = 0;
     int json = 0;
     for (int i = 1; i < argc; i++) {

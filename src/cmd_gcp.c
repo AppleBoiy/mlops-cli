@@ -186,7 +186,7 @@ static int cmd_gcp_tunnel(int argc, char **argv) {
     if (fetch_gcp_metadata("project/project-id", project, sizeof(project)) == 0 &&
         fetch_gcp_metadata("instance/zone", zone_full, sizeof(zone_full)) == 0) {
         
-        char *zone = strrchr(zone_full, '/');
+        const char *zone = strrchr(zone_full, '/');
         if (zone) zone++; else zone = zone_full;
         
         snprintf(cmd, sizeof(cmd), 

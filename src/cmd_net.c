@@ -122,7 +122,7 @@ static unsigned long find_inode_for_port(int search_port, const char *proto_file
 /*
  * Handle `mops net port <number>`
  */
-int cmd_net_port(int argc, char **argv) {
+static int cmd_net_port(int argc, char **argv) {
     const char *port_str = NULL;
     int json = 0;
 

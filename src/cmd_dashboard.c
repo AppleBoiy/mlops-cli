@@ -40,7 +40,7 @@ static int get_task_count() {
     return count;
 }
 
-void draw_bar(int y, int x, int width, double pct, const char *label) {
+static void draw_bar(int y, int x, int width, double pct, const char *label) {
     mvprintw(y, x, "%s: [", label);
     int bar_width = width - strlen(label) - 5;
     int filled = (int)(bar_width * (pct / 100.0));

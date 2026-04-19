@@ -44,7 +44,7 @@ static unsigned long long get_total_time(const struct cpu_stat *st) {
            st->iowait + st->irq + st->softirq + st->steal;
 }
 
-int cmd_sys_cpu(int argc, char **argv) {
+static int cmd_sys_cpu(int argc, char **argv) {
     struct arg_lit *human = arg_lit0("h", NULL, "human readable output");
     struct arg_lit *longf = arg_lit0("l", NULL, "long format");
     struct arg_lit *jsonf = arg_lit0(NULL, "json", "output in JSON format");
@@ -95,11 +95,9 @@ int cmd_sys_cpu(int argc, char **argv) {
     unsigned long long idle2 = get_idle_time(&stat2);
     unsigned long long total2 = get_total_time(&stat2);
 
-    unsigned long long total_diff = total2 - total1;
-    unsigned long long idle_diff = idle2 - idle1;
-
     double usage = 0.0;
     if (total_diff > 0) {
+        unsigned long long idle_diff = idle2 - idle1;
         usage = (double)(total_diff - idle_diff) / total_diff * 100.0;
     }
 
@@ -136,7 +134,7 @@ int cmd_sys_cpu(int argc, char **argv) {
  * System Metrics - Memory
  */
 
-int cmd_sys_mem(int argc, char **argv) {
+static int cmd_sys_mem(int argc, char **argv) {
     struct arg_lit *human = arg_lit0("h", NULL, "human readable output");
     struct arg_lit *jsonf = arg_lit0(NULL, "json", "output in JSON format");
     struct arg_lit *help  = arg_lit0(NULL, "help", "print this help and exit");
@@ -223,7 +221,7 @@ int cmd_sys_mem(int argc, char **argv) {
  * System Metrics - GPU
  */
 
-int cmd_sys_gpu(int argc, char **argv) {
+static int cmd_sys_gpu(int argc, char **argv) {
     int human_readable = 0;
     int long_format = 0;
     int pids = 0;
@@ -373,7 +371,7 @@ int cmd_sys_gpu(int argc, char **argv) {
  * System Metrics - TPU
  */
 
-int cmd_sys_tpu(int argc, char **argv) {
+static int cmd_sys_tpu(int argc, char **argv) {
     int human_readable = 0;
     int long_format = 0;
     int json = 0;
@@ -444,7 +442,7 @@ int cmd_sys_tpu(int argc, char **argv) {
  * System Metrics - OOM
  */
 
-int cmd_sys_oom(int argc, char **argv) {
+static int cmd_sys_oom(int argc, char **argv) {
     int json = 0;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--json") == 0) json = 1;
@@ -505,7 +503,7 @@ int cmd_sys_oom(int argc, char **argv) {
  * System Metrics - CGroup Usage
  */
 
-int cmd_sys_cgroup(int argc, char **argv) {
+static int cmd_sys_cgroup(int argc, char **argv) {
     int json = 0;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--json") == 0) json = 1;
