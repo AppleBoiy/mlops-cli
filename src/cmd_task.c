@@ -83,7 +83,9 @@ static void notify_webhook(const char *url, int task_id, int exit_code) {
              "curl -s -X POST -H 'Content-Type: application/json' "
              "-d '{\"task_id\":%d, \"exit_code\":%d}' %s > /dev/null", 
              task_id, exit_code, url);
-    system(curl_cmd);
+    if (system(curl_cmd) == -1) {
+        /* Ignore execution failures for background webhooks */
+    }
 }
 
 /*
@@ -414,7 +416,7 @@ int cmd_task_clean(int argc, char **argv) {
     while ((ent = readdir(dir)) != NULL) {
         if (!isdigit((unsigned char)ent->d_name[0])) continue;
         
-        char path[256];
+        char path[512];
         snprintf(path, sizeof(path), "/proc/%s/stat", ent->d_name);
         
         FILE *fp = fopen(path, "r");
